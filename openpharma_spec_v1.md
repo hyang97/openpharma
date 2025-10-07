@@ -23,16 +23,17 @@ Move from manual research (8 hours) to real-time strategic reasoning (10 minutes
 
 ## Part 2: Phased Development Roadmap
 
-### **Phase 1: Clinical Pipeline Intelligence MVP (Weeks 1-4)**
+### **Phase 1: Research Literature Intelligence MVP (Weeks 1-4)**
 
 #### Business Capabilities
-- **Core Use Case:** "What are Merck's active Phase 3 oncology trials?"
-- **User Value:** Generate complete competitor clinical trial landscape in 10 minutes vs. 1 day of manual work
+- **Core Use Case:** "What are the latest CAR-T therapy efficacy results from clinical studies?"
+- **User Value:** Synthesize research insights from thousands of papers in 10 minutes vs. weeks of manual literature review
 - **Success Metric:** 10+ weekly active users, 80%+ query satisfaction
 
 #### Data Sources
-- **ClinicalTrials.gov** - 450K+ clinical studies
-  - Trial design, phase, status, sponsors, conditions, interventions
+- **PubMed Central Open Access** - 8M+ full-text research papers
+  - Cancer research focus (~200K papers for Phase 1)
+  - Published study results, treatment outcomes, biomarker data, safety profiles
 
 #### System Architecture
 
@@ -41,11 +42,11 @@ Streamlit (UI for testing)
     ↓
 FastAPI (REST API)
     ↓
-    ├→ Vertex AI Gemini (LLM reasoning)
-    ├→ Vertex AI Embeddings (semantic search)
+    ├→ OpenAI GPT-4 (LLM reasoning)
+    ├→ OpenAI text-embedding-3-large (semantic search)
     └→ Cloud SQL: Postgres + pgvector (vector store)
 
-Cloud Run Job (daily data ingestion)
+Cloud Run Job (weekly data ingestion)
 Cloud Storage (raw data backup)
 Cloud Monitoring (observability)
 ```
@@ -55,55 +56,75 @@ Cloud Monitoring (observability)
 |-----------|------------|-----------|
 | **API Backend** | FastAPI | Industry standard for ML APIs, async support |
 | **UI** | Streamlit | Rapid prototyping, all-in-one Python |
-| **LLM** | Vertex AI Gemini | Managed API, enterprise SLAs |
-| **Embeddings** | Vertex AI Embeddings | Native GCP integration |
-| **Vector Store** | Postgres + pgvector | Simple, cost-effective for MVP scale |
+| **LLM** | Ollama Llama 3.1 8B / OpenAI GPT-4 | Local development / Demo quality (configurable) |
+| **Embeddings** | OpenAI text-embedding-3-large | High-quality embeddings, proven performance |
+| **Vector Store** | Local Postgres + pgvector | Simple, cost-effective, fully local development |
+| **Containerization** | Docker + Docker Compose | Local development, Cloud Run deployment |
+| **Deployment** | Local Docker / GCP Cloud Run | Local development / Cloud demos only |
+| **Evaluation** | RAGAS + Custom Metrics | RAG evaluation, citation accuracy measurement |
 | **Data Ingestion** | Cloud Run Jobs | Serverless scheduling, no orchestration overhead |
 | **Monitoring** | Cloud Monitoring | Built-in GCP, free tier sufficient |
 
 #### Key Features
 1. **Conversational RAG Interface**
-   - Natural language queries about clinical trials
-   - Semantic search over trial documents
+   - Natural language queries about research findings
+   - Semantic search over research paper sections
    - LLM synthesis with inline citations
    - <30 second response time (p95)
 
 2. **Verifiable Citations**
-   - Every claim linked to source (NCT ID)
-   - Click-through to ClinicalTrials.gov
+   - Every claim linked to source paper (PMID)
+   - Click-through to PubMed Central
    - 95%+ citation accuracy
 
-3. **Daily Data Updates**
-   - Automated ingestion from ClinicalTrials.gov
-   - Simple paragraph-based chunking
+3. **Weekly Data Updates**
+   - Automated ingestion from PubMed Central API
+   - Section-based chunking (Abstract, Methods, Results, Discussion)
    - Incremental updates to vector store
 
+4. **Evaluation & Quality Assurance**
+   - RAGAS evaluation framework (faithfulness, answer relevancy, context recall)
+   - Citation accuracy measurement and tracking
+   - Response quality metrics and automated testing
+   - Performance benchmarking and optimization
+
 #### Technical Details
-- **Document Processing:** Simple split on paragraph breaks (`\n\n`)
-- **Vector Dimensions:** 768 (Vertex AI embedding model)
+- **Document Processing:** Section-based chunking (Abstract, Methods, Results, Discussion)
+- **Vector Dimensions:** 3072 (OpenAI text-embedding-3-large)
 - **Retrieval:** Top-20 semantic nearest neighbors
-- **Monthly Cost:** $20-50 (Cloud Run + Cloud SQL free tier + API calls)
+- **Development Cost:** $0/month (local Ollama + local Postgres)
+- **Demo Cost:** $5-15/month (OpenAI GPT-4 calls when needed)
+- **Embedding Cost:** $10-20 one-time (OpenAI embeddings for 200K papers)
+- **GCP Credit Strategy:** Leverage free tiers (Cloud Run 2M requests, Cloud SQL shared-core)
 
 #### Non-Functional Requirements
-- 99%+ uptime during business hours
-- Data freshness <24 hours
+- 99%+ uptime during business hours (demo purposes)
+- Data freshness <1 week (sufficient for learning)
 - Per-query cost <$0.10
+- Total project cost: <$100 personal + <$50 GCP credits
+
+#### Hybrid Development Strategy
+- **Local Development:** Docker Compose (Postgres + FastAPI + Streamlit)
+- **LLM Flexibility:** Environment variable to switch Ollama ↔ OpenAI GPT-4
+- **Embeddings:** Always OpenAI (consistent vector dimensions)
+- **Cloud Deployment:** GCP Cloud Run for portfolio demos only
+- **Cost Optimization:** 95% development local ($0), 5% demos with GPT-4 ($5-15/month)
 
 ---
 
 ### **Phase 2: Multi-Domain Intelligence Platform (Weeks 5-12)**
 
 #### Business Capabilities Unlocked
-- **Cross-Domain Analysis:** "What clinical trials support the drugs Pfizer highlighted in their Q3 earnings as key growth drivers?"
+- **Cross-Domain Analysis:** "What clinical trials support the drugs mentioned in recent oncology research, and what are their regulatory statuses?"
 - **Regulatory Intelligence:** "Compare drug labels for competing PD-1 inhibitors"
-- **Strategic Synthesis:** "What therapeutic areas is Merck prioritizing based on their trial portfolio and SEC filings?"
+- **Research-to-Market Analysis:** "Which therapies from recent research papers have progressed to clinical trials?"
 - **Agentic Workflows:** Multi-step research tasks with tool use
 
 #### Data Sources Added
-- **PubMed** - Published trial results, KOL identification
+- **ClinicalTrials.gov** - Active clinical studies, trial status, sponsors
 - **FDA Drugs@FDA** - Approved drugs, regulatory actions
 - **DailyMed** - Structured product labeling
-- **SEC EDGAR** - 10-K/10-Q filings for corporate strategy
+- **SEC EDGAR** - 10-K/10-Q filings for corporate strategy (optional)
 
 #### System Architecture
 
@@ -112,10 +133,10 @@ Next.js/React (production UI)
     ↓
 FastAPI + LangChain/LangGraph (agent orchestration)
     ↓
-    ├→ Vertex AI Gemini (LLM)
+    ├→ OpenAI GPT-4 (LLM)
     ├→ MCP (Model Context Protocol - tool integration)
     ├→ Cloud SQL: Postgres + pgvector (vectors)
-    └→ Neo4j (knowledge graph)
+    └→ Postgres JSONB (structured relationships)
 
 MLflow (experiment tracking)
 Cloud Run Jobs (multi-source ingestion)
@@ -154,9 +175,9 @@ Cloud Monitoring (production observability)
    - Log evaluation metrics (faithfulness, relevancy)
 
 #### Technical Details
-- **Graph Schema:** (Company)-[:SPONSORS]->(Trial)-[:PUBLISHED_AS]->(Paper)-[:WRITTEN_BY]->(Author)
+- **Relationship Schema:** Papers ↔ Trials ↔ Drugs ↔ Companies (stored in Postgres JSONB)
 - **Agent Types:** ReAct, Plan-and-Execute, Multi-agent collaboration
-- **Monthly Cost:** $100-300 (increased data sources + Neo4j hosting)
+- **Monthly Cost:** $150-400 (multiple data sources + OpenAI API calls)
 
 ---
 
