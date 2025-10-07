@@ -8,6 +8,30 @@ class Document(Base):
     """
     Research papers and regulatory documents with metadata.
     No embeddings at document level - all semantic search happens via chunks.
+
+    DESIGN NOTES - Section Storage:
+    --------------------------------
+    For research papers, we store sections (Introduction, Methods, Results, etc.)
+    in a normalized way to avoid duplication:
+
+    1. full_text contains ALL sections concatenated with headers:
+       "INTRODUCTION\\nText...\\n\\nMETHODS\\nText...\\n\\nRESULTS\\nText..."
+
+    2. doc_metadata['section_offsets'] stores character positions:
+       [
+         {"section": "introduction", "char_start": 13, "char_end": 500},
+         {"section": "methods", "char_start": 510, "char_end": 1200}
+       ]
+
+    3. To recover a section: full_text[char_start:char_end]
+
+    4. During ingestion, sections are chunked separately (not persisted as dict)
+       so each chunk knows which section it belongs to.
+
+    This design provides:
+    - No data duplication (single source of truth in full_text)
+    - Easy section recovery for re-chunking or analysis
+    - Proper section labels on chunks for better RAG context
     """
     __tablename__ = "documents"
 
@@ -21,10 +45,11 @@ class Document(Base):
     # Document content
     title = Column(Text, nullable=False)
     abstract = Column(Text)
-    full_text = Column(Text)
+    full_text = Column(Text)  # Concatenated sections with headers (see design notes above)
 
-    # Flexible metadata (authors, publication_date, journal, doi, etc.)
+    # Flexible metadata (authors, publication_date, journal, doi, section_offsets, etc.)
     # Named doc_metadata to avoid conflict with SQLAlchemy's reserved 'metadata' attribute
+    # IMPORTANT: section_offsets must be stored here (see design notes above)
     doc_metadata = Column(JSONB)
 
     # Timestamps
