@@ -27,17 +27,22 @@ The project follows a phased development approach across three phases:
 ## Key Technical Components
 
 ### Data Processing
-- **Phase 1**: Section-based chunking (Abstract, Methods, Results, Discussion)
-- **Phase 2**: Token-based chunking (512 tokens, 50 overlap) with metadata preservation
-- **Vector Dimensions**: 3072 (OpenAI text-embedding-3-large)
+- **Chunking Strategy**: Token-based chunking (512 tokens, 50-token overlap) with section-based organization
+- **Context Enhancement**: Document title + section name prepended to embeddings (not stored in content)
+- **Vector Embeddings**: 1536 dimensions (OpenAI text-embedding-3-small)
+- **Index Type**: HNSW (m=16, ef_construction=64) for fast similarity search
 
 ### Infrastructure Choices
 - **Vector Store**: Local Postgres + pgvector (cost-effective for <1M documents)
-- **Relationships**: Postgres JSONB for structured data (simpler than Neo4j)
+- **Schema Design**:
+  - `documents` table: Metadata only (no document-level embeddings)
+  - `document_chunks` table: Chunked content with VECTOR(1536) embeddings
+  - JSONB columns (`doc_metadata`) for source-specific fields
+  - UNIQUE constraint on (source, source_id) for deduplication
 - **LLM Strategy**: Hybrid local (Ollama) + cloud (OpenAI) via environment configuration
 - **Deployment**: Local Docker development, GCP Cloud Run for demos
 - **Monitoring**: Cloud Monitoring for production demos
-- **Orchestration**: LangChain + LangGraph for agentic workflows
+- **Orchestration**: LangChain + LangGraph for agentic workflows (Phase 2+)
 
 ### Key Design Patterns
 - Conversational RAG with semantic search
@@ -64,9 +69,10 @@ This is a learning-focused AI engineering project optimized for hands-on experie
 
 ### Integration Patterns
 - Weekly automated ingestion via Cloud Run Jobs
-- Incremental updates to vector store
-- Section-based document parsing (research papers, regulatory docs)
-- Consistent embedding strategy with OpenAI text-embedding-3-large
+- Batch embedding workflow: Ingest documents → chunk → embed in batches
+- Document updates: Delete old chunks, recreate with new embeddings
+- Section-based organization (abstract, methods, results, discussion)
+- Consistent embedding: OpenAI text-embedding-3-small with contextual enhancement
 
 ## Success Metrics
 

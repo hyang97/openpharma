@@ -3,12 +3,13 @@ from pydantic import BaseModel
 import os
 import ollama
 from typing import Optional
+from .db.database import get_db
 
 app = FastAPI(title="OpenPharma API", version="0.1.0")
 
 class QuestionRequest(BaseModel):
     question: str
-    use_local: Optional[bool] = None
+    use_local: Optional[bool] = None # allows use_local (boolean type) to be optional parameter. default value is None, meaning "i don't care, use environment variable"
 
 class QuestionResponse(BaseModel):
     answer: str
@@ -24,12 +25,12 @@ async def ask_question(request: QuestionRequest):
     """Ask a question and get an AI response"""
 
     # Determine which model to use
-    use_local = request.use_local if request.use_local is not None else os.getenv("USE_LOCAL_LLM", "true").lower() == "true"
+    use_local = request.use_local if request.use_local is not None else os.getenv("USE_LOCAL_LLM", default="true").lower() == "true"
 
     try:
         if use_local:
             # Use local Ollama
-            client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+            client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", default="http://localhost:11434"))
             response = client.chat(
                 model='llama3.1:8b',
                 messages=[{
