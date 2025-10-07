@@ -57,7 +57,7 @@ Cloud Monitoring (observability)
 | **API Backend** | FastAPI | Industry standard for ML APIs, async support |
 | **UI** | Streamlit | Rapid prototyping, all-in-one Python |
 | **LLM** | Ollama Llama 3.1 8B / OpenAI GPT-4 | Local development / Demo quality (configurable) |
-| **Embeddings** | OpenAI text-embedding-3-large | High-quality embeddings, proven performance |
+| **Embeddings** | OpenAI text-embedding-3-small | 1536 dims (HNSW compatible), cost-effective |
 | **Vector Store** | Local Postgres + pgvector | Simple, cost-effective, fully local development |
 | **Containerization** | Docker + Docker Compose | Local development, Cloud Run deployment |
 | **Deployment** | Local Docker / GCP Cloud Run | Local development / Cloud demos only |
@@ -79,8 +79,10 @@ Cloud Monitoring (observability)
 
 3. **Weekly Data Updates**
    - Automated ingestion from PubMed Central API
-   - Section-based chunking (Abstract, Methods, Results, Discussion)
-   - Incremental updates to vector store
+   - Token-based chunking (512 tokens, 50-token overlap)
+   - Section-based organization (Abstract, Methods, Results, Discussion)
+   - Context-enhanced embeddings (title + section prepended)
+   - Batch embedding workflow for cost efficiency
 
 4. **Evaluation & Quality Assurance**
    - RAGAS evaluation framework (faithfulness, answer relevancy, context recall)
@@ -89,12 +91,18 @@ Cloud Monitoring (observability)
    - Performance benchmarking and optimization
 
 #### Technical Details
-- **Document Processing:** Section-based chunking (Abstract, Methods, Results, Discussion)
-- **Vector Dimensions:** 3072 (OpenAI text-embedding-3-large)
-- **Retrieval:** Top-20 semantic nearest neighbors
+- **Document Processing:** 512-token chunks with 50-token overlap, section-based organization
+- **Vector Embeddings:** 1536 dimensions (OpenAI text-embedding-3-small)
+- **Vector Index:** HNSW (m=16, ef_construction=64) for fast similarity search
+- **Database Schema:**
+  - `documents` table: Metadata only (no document-level embeddings)
+  - `document_chunks` table: Chunked content with VECTOR(1536) embeddings
+  - UNIQUE(source, source_id) constraint for deduplication
+  - JSONB columns for flexible source-specific metadata
+- **Retrieval:** Top-20 semantic nearest neighbors via cosine similarity
 - **Development Cost:** $0/month (local Ollama + local Postgres)
 - **Demo Cost:** $5-15/month (OpenAI GPT-4 calls when needed)
-- **Embedding Cost:** $10-20 one-time (OpenAI embeddings for 200K papers)
+- **Embedding Cost:** $5-10 one-time (text-embedding-3-small cheaper than 3-large)
 - **GCP Credit Strategy:** Leverage free tiers (Cloud Run 2M requests, Cloud SQL shared-core)
 
 #### Non-Functional Requirements
@@ -165,9 +173,10 @@ Cloud Monitoring (production observability)
    - Enables questions impossible with vector search alone
 
 3. **Advanced Document Processing**
-   - Token-based chunking with overlap (512 tokens, 50 overlap)
-   - Metadata preservation for complex citations
-   - Multi-format parsing (XML, JSON, PDF, SEC filings)
+   - Already implemented in Phase 1: Token-based chunking (512 tokens, 50 overlap)
+   - Context-enhanced embeddings with document title + section
+   - Multi-format parsing (XML, JSON, PDF, SEC filings) - Phase 2 addition
+   - JSONB metadata storage for source-specific fields
 
 4. **Experiment Tracking**
    - Compare embedding models, chunking strategies, prompt variations
@@ -175,8 +184,9 @@ Cloud Monitoring (production observability)
    - Log evaluation metrics (faithfulness, relevancy)
 
 #### Technical Details
-- **Relationship Schema:** Papers ↔ Trials ↔ Drugs ↔ Companies (stored in Postgres JSONB)
+- **Relationship Schema:** Papers ↔ Trials ↔ Drugs ↔ Companies (Postgres JSONB, not Neo4j in Phase 2)
 - **Agent Types:** ReAct, Plan-and-Execute, Multi-agent collaboration
+- **Neo4j Migration:** Optional Phase 3 upgrade if graph complexity warrants dedicated graph DB
 - **Monthly Cost:** $150-400 (multiple data sources + OpenAI API calls)
 
 ---
@@ -255,11 +265,24 @@ Cloud Storage (document store)
 
 ### Why These Choices?
 
-**Postgres + pgvector (Phase 1) vs. Pinecone:**
+**Postgres + pgvector vs. Pinecone:**
 - Postgres sufficient for <1M documents
 - $0-50/month vs. $70-200/month
+- HNSW index provides excellent performance for our scale
 - Simpler deployment, no external dependencies
 - Upgrade to dedicated vector DB only when scale demands it
+
+**text-embedding-3-small vs. 3-large:**
+- 1536 dims vs. 3072 dims
+- Compatible with HNSW (2000-dim limit) without quantization
+- 50% cost savings on embeddings
+- Negligible quality difference for domain-specific retrieval
+
+**Chunk-level search only (no document embeddings):**
+- Prevents context bloat (20-page paper → focused 512-token chunk)
+- Better retrieval accuracy for specific questions
+- Lower LLM costs (smaller context windows)
+- Documents table stores metadata only
 
 **Streamlit (Phase 1) → React (Phase 2):**
 - Streamlit = rapid prototyping, ship in days
