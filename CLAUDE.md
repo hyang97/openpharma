@@ -10,10 +10,11 @@ OpenPharma is an AI-powered strategic intelligence engine for pharmaceutical com
 
 The project follows a phased development approach across three phases:
 
-### Phase 1: Research Literature Intelligence MVP
-- **Tech Stack**: FastAPI backend, Streamlit UI, Ollama Llama 3.1 8B/OpenAI GPT-4 (configurable), Local Postgres + pgvector
-- **Primary Data Source**: PubMed Central Open Access (200K+ cancer research papers)
+### Phase 1: Research Literature Intelligence MVP (Current)
+- **Tech Stack**: FastAPI backend, Streamlit UI (planned), Ollama Llama 3.1 8B/OpenAI GPT-4 (configurable), Local Postgres + pgvector
+- **Primary Data Source**: PubMed Central Open Access (diabetes research focus)
 - **Core Capability**: Conversational RAG interface for research literature queries
+- **Current Status**: Data ingestion pipeline complete (fetcher, parser, chunker, embeddings). Next: batch ingestion script + testing.
 
 ### Phase 2: Multi-Domain Intelligence Platform
 - **Tech Stack**: Next.js/React frontend, FastAPI + LangChain/LangGraph for agent orchestration, Postgres JSONB for relationships
@@ -27,21 +28,31 @@ The project follows a phased development approach across three phases:
 ## Key Technical Components
 
 ### Data Processing
-- **Chunking Strategy**: Token-based chunking (512 tokens, 50-token overlap) with section-based organization
-- **Context Enhancement**: Document title + section name prepended to embeddings (not stored in content)
+- **Chunking Strategy**: Token-based chunking (512 tokens, 50-token overlap) with section-aware processing
+  - Each section (abstract, introduction, methods, results, etc.) chunked separately to preserve semantic boundaries
+  - Title NOT chunked (included in every chunk's embedding context)
+- **Context Enhancement**: Document title + section name prepended to embeddings via `embedding_text` field (not stored in DB)
 - **Vector Embeddings**: 1536 dimensions (OpenAI text-embedding-3-small)
 - **Index Type**: HNSW (m=16, ef_construction=64) for fast similarity search
 
 ### Infrastructure Choices
 - **Vector Store**: Local Postgres + pgvector (cost-effective for <1M documents)
 - **Schema Design**:
-  - `documents` table: Metadata only (no document-level embeddings)
+  - `documents` table: Stores complete document text + metadata
+    - `full_text` contains title + abstract + all body sections with headers
+    - `doc_metadata['section_offsets']` tracks character positions for section recovery
+    - See `docs/data_design.md` for detailed section storage strategy
   - `document_chunks` table: Chunked content with VECTOR(1536) embeddings
+    - `content` field stores raw chunk text
+    - `section` field identifies source section (abstract, methods, results, etc.)
+    - `char_start/char_end` point into parent document's `full_text`
   - JSONB columns (`doc_metadata`) for source-specific fields
   - UNIQUE constraint on (source, source_id) for deduplication
 - **LLM Strategy**: Hybrid local (Ollama) + cloud (OpenAI) via environment configuration
-- **Deployment**: Local Docker development, GCP Cloud Run for demos
-- **Monitoring**: Cloud Monitoring for production demos
+- **Deployment**: Local Docker development, GCP Cloud Run for demos (planned)
+- **Logging**: Python logging module with configurable levels (DEBUG/INFO/WARNING/ERROR/CRITICAL)
+  - API logs: `logs/openpharma.log` (static filename)
+  - Batch scripts: timestamped filenames
 - **Orchestration**: LangChain + LangGraph for agentic workflows (Phase 2+)
 
 ### Key Design Patterns
@@ -56,9 +67,38 @@ This is a learning-focused AI engineering project optimized for hands-on experie
 
 1. **Hybrid Development**: Local development with Ollama, cloud demos with OpenAI GPT-4
 2. **Docker-First**: All services containerized for consistent development and deployment
-3. **Evaluation-Driven**: Use RAGAS and custom metrics for citation accuracy measurement
+3. **Evaluation-Driven**: Use RAGAS and custom metrics for citation accuracy measurement (planned)
 4. **Cost-Conscious**: <$100 total project cost via local development + selective cloud demos
 5. **Phase-based Learning**: Master RAG fundamentals before advancing to agents and optimization
+6. **Documentation-First**: Always document design decisions before implementation (see `docs/`)
+7. **Slow and Steady**: Build understanding step-by-step, prioritize learning over speed
+8. **Professional Documentation**: No emojis in code files, documentation, or comments. Emojis are fine in conversational responses to the user.
+
+## Code Structure
+
+```
+app/
+├── db/
+│   ├── models.py           # SQLAlchemy models (Document, DocumentChunk)
+│   ├── database.py         # Database connection setup
+│   └── init_db.py          # Database initialization script
+├── ingestion/
+│   ├── pubmed_fetcher.py   # Fetch papers from PubMed Central API
+│   ├── xml_parser.py       # Parse JATS XML from PMC
+│   ├── chunker.py          # Token-based section-aware chunking
+│   └── embeddings.py       # OpenAI embedding generation (regular + batch API)
+├── logging_config.py       # Centralized logging configuration
+└── main.py                 # FastAPI application
+
+docs/
+├── data_design.md          # Complete data pipeline and schema documentation
+└── logging.md              # Logging guide and best practices
+
+examples/
+└── logging_demo.py         # Working logging examples
+
+data/batches/               # Batch API files (gitignored)
+```
 
 ## Data Sources and Integration
 
@@ -68,11 +108,14 @@ This is a learning-focused AI engineering project optimized for hands-on experie
 - **Phase 3**: USPTO, NIH RePORTER, Patient Forums, Conference Abstracts
 
 ### Integration Patterns
-- Weekly automated ingestion via Cloud Run Jobs
-- Batch embedding workflow: Ingest documents → chunk → embed in batches
+- Weekly automated ingestion via Cloud Run Jobs (planned)
+- Batch embedding workflow: Fetch from PubMed → Parse XML → Chunk by section → Embed → Store
 - Document updates: Delete old chunks, recreate with new embeddings
-- Section-based organization (abstract, methods, results, discussion)
-- Consistent embedding: OpenAI text-embedding-3-small with contextual enhancement
+- Section-aware processing: Title, abstract, and body sections tracked with character offsets
+- Embedding options:
+  - **Regular API**: Instant results, standard pricing (good for <100 chunks, testing)
+  - **Batch API**: 24-hour turnaround, 50% cheaper (recommended for production ingestion)
+- Rate limiting: NCBI API limited to 3 requests/second (0.34s sleep between calls)
 
 ## Success Metrics
 
