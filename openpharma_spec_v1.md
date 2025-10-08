@@ -25,14 +25,18 @@ Move from manual research (8 hours) to real-time strategic reasoning (10 minutes
 
 ### **Phase 1: Research Literature Intelligence MVP (Weeks 1-4)**
 
+**Current Implementation Focus:** Diabetes research (changed from cancer for initial development)
+
+**Status:** Implementing 4-phase decoupled ingestion pipeline. See `docs/ingestion_pipeline.md` for technical architecture.
+
 #### Business Capabilities
-- **Core Use Case:** "What are the latest CAR-T therapy efficacy results from clinical studies?"
+- **Core Use Case:** "What are the latest diabetes treatment efficacy results from clinical studies?"
 - **User Value:** Synthesize research insights from thousands of papers in 10 minutes vs. weeks of manual literature review
 - **Success Metric:** 10+ weekly active users, 80%+ query satisfaction
 
 #### Data Sources
 - **PubMed Central Open Access** - 8M+ full-text research papers
-  - Cancer research focus (~200K papers for Phase 1)
+  - Diabetes research focus (~100K papers for Phase 1)
   - Published study results, treatment outcomes, biomarker data, safety profiles
 
 #### System Architecture

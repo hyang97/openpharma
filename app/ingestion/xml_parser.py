@@ -165,14 +165,21 @@ class PMCXMLParser:
                 else "body"
             )
 
-            # Get all paragraph text in this section
-            paragraphs = []
-            for p in sec.findall(".//p"):
-                text = self._get_text_content(p)
-                if text:
-                    paragraphs.append(text)
+            # Get all content in this section (paragraphs and tables)
+            content_parts = []
 
-            if paragraphs:
+            # Process all child elements in order (paragraphs and tables)
+            for elem in sec.iter():
+                if elem.tag == 'p' and elem.getparent() == sec or any(elem.getparent() == parent for parent in sec.findall('.//sec')):
+                    text = self._get_text_content(elem)
+                    if text:
+                        content_parts.append(text)
+                elif elem.tag == 'table-wrap':
+                    table_text = self._extract_table(elem)
+                    if table_text:
+                        content_parts.append(table_text)
+
+            if content_parts:
                 # If section name already exists, append with number
                 base_name = section_name
                 counter = 1
@@ -180,7 +187,7 @@ class PMCXMLParser:
                     section_name = f"{base_name}_{counter}"
                     counter += 1
 
-                sections[section_name] = "\n\n".join(paragraphs)
+                sections[section_name] = "\n\n".join(content_parts)
 
         return sections
 
@@ -197,3 +204,58 @@ class PMCXMLParser:
 
         # Clean up whitespace
         return " ".join(text.split())
+
+    def _extract_table(self, table_wrap) -> str:
+        """
+        Extract table and convert to markdown format.
+
+        Args:
+            table_wrap: <table-wrap> element containing table and caption
+
+        Returns:
+            Markdown-formatted table string
+        """
+        parts = []
+
+        # Extract caption if present
+        caption = table_wrap.find(".//caption")
+        if caption is not None:
+            caption_text = self._get_text_content(caption)
+            if caption_text:
+                parts.append(f"**{caption_text}**\n")
+
+        # Find the actual table element
+        table = table_wrap.find(".//table")
+        if table is None:
+            return ""
+
+        # Extract headers
+        headers = []
+        thead = table.find(".//thead")
+        if thead is not None:
+            for th in thead.findall(".//th"):
+                headers.append(self._get_text_content(th))
+
+        # Extract rows
+        rows = []
+        tbody = table.find(".//tbody")
+        if tbody is not None:
+            for tr in tbody.findall(".//tr"):
+                row = []
+                for td in tr.findall(".//td"):
+                    row.append(self._get_text_content(td))
+                if row:
+                    rows.append(row)
+
+        # Build markdown table
+        if headers:
+            parts.append("| " + " | ".join(headers) + " |")
+            parts.append("|" + "|".join(["---"] * len(headers)) + "|")
+
+        for row in rows:
+            # Pad row if needed to match header length
+            if headers and len(row) < len(headers):
+                row.extend([""] * (len(headers) - len(row)))
+            parts.append("| " + " | ".join(row) + " |")
+
+        return "\n".join(parts) if parts else ""
