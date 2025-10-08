@@ -14,7 +14,7 @@ The project follows a phased development approach across three phases:
 - **Tech Stack**: FastAPI backend, Streamlit UI (planned), Ollama Llama 3.1 8B/OpenAI GPT-4 (configurable), Local Postgres + pgvector
 - **Primary Data Source**: PubMed Central Open Access (diabetes research focus)
 - **Core Capability**: Conversational RAG interface for research literature queries
-- **Current Status**: Data ingestion pipeline complete (fetcher, parser, chunker, embeddings). Next: batch ingestion script + testing.
+- **Current Status**: Implementing 4-phase decoupled ingestion pipeline (see `docs/ingestion_pipeline.md`)
 
 ### Phase 2: Multi-Domain Intelligence Platform
 - **Tech Stack**: Next.js/React frontend, FastAPI + LangChain/LangGraph for agent orchestration, Postgres JSONB for relationships
@@ -38,14 +38,19 @@ The project follows a phased development approach across three phases:
 ### Infrastructure Choices
 - **Vector Store**: Local Postgres + pgvector (cost-effective for <1M documents)
 - **Schema Design**:
+  - `pubmed_papers` table: Tracks PMC IDs and fetch status (NEW - Phase 1)
+    - `pmc_id` (PK): Numeric ID only (e.g., "1234567", not "PMC1234567")
+    - `fetch_status`: 'pending', 'fetched', 'failed'
   - `documents` table: Stores complete document text + metadata
     - `full_text` contains title + abstract + all body sections with headers
     - `doc_metadata['section_offsets']` tracks character positions for section recovery
+    - `ingestion_status`: 'fetched', 'chunked', 'embedded' (NEW - Phase 1)
     - See `docs/data_design.md` for detailed section storage strategy
   - `document_chunks` table: Chunked content with VECTOR(1536) embeddings
     - `content` field stores raw chunk text
     - `section` field identifies source section (abstract, methods, results, etc.)
     - `char_start/char_end` point into parent document's `full_text`
+    - `embedding` can be NULL (indicates needs embedding)
   - JSONB columns (`doc_metadata`) for source-specific fields
   - UNIQUE constraint on (source, source_id) for deduplication
 - **LLM Strategy**: Hybrid local (Ollama) + cloud (OpenAI) via environment configuration
@@ -79,23 +84,29 @@ This is a learning-focused AI engineering project optimized for hands-on experie
 ```
 app/
 ├── db/
-│   ├── models.py           # SQLAlchemy models (Document, DocumentChunk)
+│   ├── models.py           # SQLAlchemy models (Document, DocumentChunk, PubMedPaper)
 │   ├── database.py         # Database connection setup
 │   └── init_db.py          # Database initialization script
 ├── ingestion/
 │   ├── pubmed_fetcher.py   # Fetch papers from PubMed Central API
-│   ├── xml_parser.py       # Parse JATS XML from PMC
+│   ├── xml_parser.py       # Parse JATS XML from PMC (includes table extraction)
 │   ├── chunker.py          # Token-based section-aware chunking
 │   └── embeddings.py       # OpenAI embedding generation (regular + batch API)
 ├── logging_config.py       # Centralized logging configuration
 └── main.py                 # FastAPI application
 
-docs/
-├── data_design.md          # Complete data pipeline and schema documentation
-└── logging.md              # Logging guide and best practices
+scripts/
+├── collect_pmc_ids.py      # Phase 1: Search and store PMC IDs
+├── fetch_papers.py         # Phase 2: Fetch and store documents
+├── chunk_papers.py         # Phase 3: Chunk documents
+└── embed_chunks.py         # Phase 4: Embed chunks
 
-examples/
-└── logging_demo.py         # Working logging examples
+docs/
+├── ingestion_pipeline.md   # 4-phase decoupled pipeline architecture
+├── data_design.md          # Database schema and storage strategy
+├── embedding_service.md    # EmbeddingService API reference
+├── logging.md              # Logging guide and best practices
+└── archive/                # Archived/outdated documentation
 
 data/batches/               # Batch API files (gitignored)
 ```
@@ -103,18 +114,27 @@ data/batches/               # Batch API files (gitignored)
 ## Data Sources and Integration
 
 ### Primary Sources by Phase
-- **Phase 1**: PubMed Central Open Access (cancer research focus)
+- **Phase 1**: PubMed Central Open Access (diabetes research focus)
 - **Phase 2**: ClinicalTrials.gov, FDA Drugs@FDA, DailyMed
 - **Phase 3**: USPTO, NIH RePORTER, Patient Forums, Conference Abstracts
 
-### Integration Patterns
-- Weekly automated ingestion via Cloud Run Jobs (planned)
-- Batch embedding workflow: Fetch from PubMed → Parse XML → Chunk by section → Embed → Store
-- Document updates: Delete old chunks, recreate with new embeddings
-- Section-aware processing: Title, abstract, and body sections tracked with character offsets
+### Integration Patterns - 4-Phase Decoupled Pipeline
+
+**See `docs/ingestion_pipeline.md` for complete architecture.**
+
+1. **Phase 1 - Collect PMC IDs**: Search PubMed → Store IDs in `pubmed_papers` table
+2. **Phase 2 - Fetch Papers**: Fetch XML → Parse → UPSERT into `documents` table
+3. **Phase 3 - Chunk Documents**: Create chunks with NULL embeddings
+4. **Phase 4 - Embed Chunks**: Generate embeddings, update chunks
+
+**Key Features:**
+- Each phase is independent and resumable
+- Idempotent operations (can re-run without duplicates)
+- Document updates via PubMed `[lr]` (last revision) date field
+- UPSERT replaces old documents (no version history)
 - Embedding options:
-  - **Regular API**: Instant results, standard pricing (good for <100 chunks, testing)
-  - **Batch API**: 24-hour turnaround, 50% cheaper (recommended for production ingestion)
+  - **Regular API**: Instant results, standard pricing (~$100 for 100K papers)
+  - **Batch API**: 24-hour turnaround, 50% cheaper (~$50 for 100K papers)
 - Rate limiting: NCBI API limited to 3 requests/second (0.34s sleep between calls)
 
 ## Success Metrics

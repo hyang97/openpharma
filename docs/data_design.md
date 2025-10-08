@@ -26,7 +26,9 @@ OpenPharma ingests research papers from PubMed Central and stores them in a norm
 
 ## Ingestion Pipeline
 
-The pipeline consists of four main stages:
+**NOTE:** The ingestion pipeline has been redesigned as a decoupled 4-phase system. See `docs/ingestion_pipeline.md` for the complete architecture.
+
+The original monolithic pipeline consisted of four main stages:
 
 ```
 1. Fetch → 2. Parse → 3. Chunk → 4. Embed → 5. Store

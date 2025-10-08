@@ -39,10 +39,10 @@ class PubMedFetcher:
             List of PMC IDs (e.g., ['PMC1234567', 'PMC2345678'])
         """
         query = (
-            "diabetes[Title/Abstract] AND " # diabetes in title or abstract
-            "open access[filter] AND " # open access filter (legally free to download)
-            "\"loattrfree full text\"[sb]" # most permissive licensing (no attribution required)
-            # "hasfulltextsb[sb]" # Alternative: for all open access full text (more papers, may have licensing restrictions)
+            "diabetes[Title/Abstract] AND "  # diabetes in title or abstract
+            "open access[filter] AND "  # open access filter (full text available)
+            "2020:2025[pdat] AND "  # published between 2020-2025
+            "Journal Article[ptyp]"  # only journal articles (exclude editorials, corrections, etc)
         )
 
         try:
