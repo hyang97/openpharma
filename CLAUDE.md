@@ -78,6 +78,13 @@ This is a learning-focused AI engineering project optimized for hands-on experie
 6. **Documentation-First**: Always document design decisions before implementation (see `docs/`)
 7. **Slow and Steady**: Build understanding step-by-step, prioritize learning over speed
 8. **Professional Documentation**: No emojis in code files, documentation, or comments. Emojis are fine in conversational responses to the user.
+9. **No One-Off Scripts**: Avoid creating temporary Python scripts for debugging or database checks. Use bash commands with inline Python or docker-compose exec for ad-hoc operations.
+10. **Archive, Don't Delete**: When replacing or deprecating files, move them to `archive/` with a timestamp suffix (e.g., `old_script_20250108.py`) rather than deleting. This preserves project history for learning.
+11. **End-of-Session Workflow**: When the user asks to wrap up:
+    - Review all code changes made during the session
+    - Update all relevant design docs in `docs/` to reflect implementation changes
+    - Create a git commit with a short one-liner message summarizing the session's work
+12. **Update Docs at Session End Only**: Do NOT update design docs incrementally during implementation - only update them at the end of the session during wrap-up.
 
 ## Code Structure
 
@@ -96,18 +103,22 @@ app/
 └── main.py                 # FastAPI application
 
 scripts/
-├── collect_pmc_ids.py      # Phase 1: Search and store PMC IDs
-├── fetch_papers.py         # Phase 2: Fetch and store documents
-├── chunk_papers.py         # Phase 3: Chunk documents
-└── embed_chunks.py         # Phase 4: Embed chunks
+├── collect_pmc_ids.py      # Stage 1: Search and store PMC IDs
+├── fetch_papers.py         # Stage 2: Fetch and store documents
+├── chunk_papers.py         # Stage 3: Chunk documents
+└── embed_chunks.py         # Stage 4: Embed chunks
 
 docs/
-├── ingestion_pipeline.md   # 4-phase decoupled pipeline architecture
+├── project_spec.md         # Project specification and requirements
+├── ingestion_pipeline.md   # 4-stage decoupled pipeline architecture
 ├── data_design.md          # Database schema and storage strategy
 ├── embedding_service.md    # EmbeddingService API reference
-├── logging.md              # Logging guide and best practices
-└── archive/                # Archived/outdated documentation
+└── logging.md              # Logging guide and best practices
 
+tests/
+└── test_pipeline.py        # Integration tests for ingestion pipeline
+
+archive/                    # Archived/outdated files (code, docs, configs)
 data/batches/               # Batch API files (gitignored)
 ```
 

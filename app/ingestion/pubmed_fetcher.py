@@ -1,6 +1,6 @@
 """
 PubMed Central fetcher using NCBI Entrez API.
-Fetches diabetes research papers from PubMed Central Open Access subset.
+Fetches research papers from PubMed Central Open Access subset.
 """
 from typing import List, Dict, Optional
 import time
@@ -23,32 +23,27 @@ class PubMedFetcher:
             Entrez.email = email
         self.xml_parser = PMCXMLParser()
 
-    def search_diabetes_papers(
+    def search_papers(
         self,
+        query: str,
         max_results: int = 100,
         start_index: int = 0
     ) -> List[str]:
         """
-        Search for diabetes research papers in PMC Open Access.
+        Search PMC Open Access for papers matching query.
 
         Args:
-            max_results: Maximum number of PMCIDs to return
-            retstart: Starting index for pagination
+            query: PubMed query string
+            max_results: Maximum number of PMC IDs to return
+            start_index: Starting index for pagination
 
         Returns:
-            List of PMC IDs (e.g., ['PMC1234567', 'PMC2345678'])
+            List of PMC IDs (numeric only, e.g., ['1234567', '2345678'])
         """
-        query = (
-            "diabetes[Title/Abstract] AND "  # diabetes in title or abstract
-            "open access[filter] AND "  # open access filter (full text available)
-            "2020:2025[pdat] AND "  # published between 2020-2025
-            "Journal Article[ptyp]"  # only journal articles (exclude editorials, corrections, etc)
-        )
-
         try:
-            logger.info(f"Searching PubMed for diabetes papers (max: {max_results}, start: {start_index})")
+            logger.info(f"Searching PMC (max: {max_results}, start: {start_index})")
             handle = Entrez.esearch(
-                db="pmc", # PubMed Central
+                db="pmc",
                 term=query,
                 retmax=max_results,
                 retstart=start_index,
@@ -57,12 +52,12 @@ class PubMedFetcher:
             record = Entrez.read(handle)
             handle.close()
 
-            pmc_ids = record["IdList"]  # Just numeric IDs, no PMC prefix needed
+            pmc_ids = record["IdList"]
             logger.info(f"Found {len(pmc_ids)} papers")
             return pmc_ids
 
         except Exception as e:
-            logger.error(f"Error searching PubMed: {e}")
+            logger.error(f"Error searching PMC: {e}")
             raise
 
     def fetch_paper_details(self, pmc_id: str) -> Optional[Dict]:

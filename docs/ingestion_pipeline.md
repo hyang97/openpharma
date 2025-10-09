@@ -2,15 +2,15 @@
 
 ## Overview
 
-The ingestion pipeline is decoupled into 4 independent phases. Each phase stores its output persistently, is independently resumable, and can be re-run without duplicating work.
+The ingestion pipeline is decoupled into 4 independent stages. Each stage stores its output persistently, is independently resumable, and can be re-run without duplicating work.
 
 ## Architecture
 
 ```
-Phase 1: Search PubMed → Store PMC IDs (pubmed_papers table)
-Phase 2: Fetch Papers → Store Documents (documents table)
-Phase 3: Chunk Documents → Create Chunks (document_chunks table)
-Phase 4: Embed Chunks → Update Embeddings (document_chunks.embedding)
+Stage 1: Search PubMed → Store PMC IDs (pubmed_papers table)
+Stage 2: Fetch Papers → Store Documents (documents table)
+Stage 3: Chunk Documents → Create Chunks (document_chunks table)
+Stage 4: Embed Chunks → Update Embeddings (document_chunks.embedding)
 ```
 
 ## Schema
@@ -60,7 +60,7 @@ class DocumentChunk(Base):
     embedding = Column(Vector(1536))  # NULL = needs embedding
 ```
 
-## Phase 1: Collect PMC IDs
+## Stage 1: Collect PMC IDs
 
 ### Script
 ```bash
@@ -89,7 +89,7 @@ python scripts/collect_pmc_ids.py --query "diabetes[Title/Abstract] AND 2025/02/
 ### Idempotency
 Re-running same search skips PMC IDs already in table (ON CONFLICT DO NOTHING)
 
-## Phase 2: Fetch Papers
+## Stage 2: Fetch Papers
 
 ### Script
 ```bash
@@ -118,10 +118,10 @@ Re-running processes only papers with `fetch_status='pending'`
 ### Handling Updates
 When a paper is re-fetched (found via `[lr]` search):
 - UPSERT replaces old document content
-- Deletes old chunks (handled in Phase 3)
+- Deletes old chunks (handled in Stage 3)
 - Re-chunks and re-embeds (Phases 3-4)
 
-## Phase 3: Chunk Documents
+## Stage 3: Chunk Documents
 
 ### Script
 ```bash
@@ -145,9 +145,9 @@ python scripts/chunk_papers.py --batch-size 50
 Re-running processes only documents with `ingestion_status='fetched'`
 
 ### Re-chunking
-When a document is updated, Phase 2 sets `ingestion_status='fetched'` again, triggering re-chunking
+When a document is updated, Stage 2 sets `ingestion_status='fetched'` again, triggering re-chunking
 
-## Phase 4: Embed Chunks
+## Stage 4: Embed Chunks
 
 ### Script
 ```bash
@@ -186,29 +186,29 @@ Re-running only processes chunks with `embedding IS NULL`
 **Failed embeddings:**
 - If any chunks fail to embed for a document, document stays at `ingestion_status='chunked'`
 - Failed chunks keep `embedding=NULL`
-- Can re-run Phase 4 to retry
+- Can re-run Stage 4 to retry
 - Log warnings for failed chunks
 
-**Option (not implemented in Phase 1):** Skip entire document if any chunk fails
+**Option (not implemented in Stage 1):** Skip entire document if any chunk fails
 
 ## Workflow Examples
 
 ### Initial Load: 100K Diabetes Papers
 
 ```bash
-# Phase 1: Collect PMC IDs
+# Stage 1: Collect PMC IDs
 python scripts/collect_pmc_ids.py --max-results 100000
 # → 100K rows in pubmed_papers
 
-# Phase 2: Fetch papers (can run multiple times to resume)
+# Stage 2: Fetch papers (can run multiple times to resume)
 python scripts/fetch_papers.py --batch-size 100
 # → 100K rows in documents (may take ~9 hours with rate limiting)
 
-# Phase 3: Chunk documents
+# Stage 3: Chunk documents
 python scripts/chunk_papers.py --batch-size 50
 # → ~10M rows in document_chunks (assuming ~100 chunks/paper)
 
-# Phase 4: Embed chunks
+# Stage 4: Embed chunks
 python scripts/embed_chunks.py --batch-size 1000
 # → All chunks get embeddings (may take hours, costs ~$200 with Regular API)
 
@@ -286,7 +286,7 @@ If embedding fails, chunk is inserted with `embedding=NULL`.
 
 Rationale:
 - Don't lose data
-- Can re-run Phase 4 to retry failed chunks
+- Can re-run Stage 4 to retry failed chunks
 - Alternative (not implemented): Skip entire document if any chunk fails
 
 ### 6. PMC IDs as Numbers Only
@@ -297,7 +297,7 @@ Rationale:
 - Cleaner data storage
 - Add "PMC" prefix only for display/logging
 
-## Future Enhancements (Not in Phase 1)
+## Future Enhancements (Not in Stage 1)
 
 1. **Search tracking**: Add `PubMedSearch` table to track which queries found which papers
 2. **Retry logic**: Track `fetch_attempts`, exponential backoff for failures
@@ -321,11 +321,11 @@ Rationale:
 
 | Phase | Time | Cost | Notes |
 |-------|------|------|-------|
-| Phase 1: Collect IDs | ~10 min | Free | NCBI API is free |
-| Phase 2: Fetch papers | ~9 hours | Free | 3 req/sec limit, free API |
-| Phase 3: Chunk | ~1 hour | Free | Local processing |
-| Phase 4: Embed (Regular) | ~2 hours | ~$100 | 10M chunks × 500 tokens × $0.02/1M |
-| Phase 4: Embed (Batch) | 2-24 hours | ~$50 | 50% discount |
+| Stage 1: Collect IDs | ~10 min | Free | NCBI API is free |
+| Stage 2: Fetch papers | ~9 hours | Free | 3 req/sec limit, free API |
+| Stage 3: Chunk | ~1 hour | Free | Local processing |
+| Stage 4: Embed (Regular) | ~2 hours | ~$100 | 10M chunks × 500 tokens × $0.02/1M |
+| Stage 4: Embed (Batch) | 2-24 hours | ~$50 | 50% discount |
 
 **Total:** ~$50-100 for initial load (depending on Regular vs Batch API)
 
@@ -336,8 +336,8 @@ Rationale:
 - ~500K chunks
 
 **Costs:**
-- Phase 1-3: Free (~30 min total)
-- Phase 4: ~$5 (Batch API) or ~$10 (Regular API)
+- Stage 1-3: Free (~30 min total)
+- Stage 4: ~$5 (Batch API) or ~$10 (Regular API)
 
 **Annual ongoing cost:** ~$60-120/year
 

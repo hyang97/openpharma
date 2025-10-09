@@ -83,7 +83,7 @@ class EmbeddingService:
     def submit_batch_embed(self, chunks: List[Dict], output_path: str = None) -> str:
         """Submit chunks to OpenAI Batch API. Returns batch_id for tracking."""
         # Validate required fields
-        required = ['embedding_text', 'source', 'source_id', 'chunk_index']
+        required = ['document_chunk_id', 'embedding_text']
         if any(f not in chunks[0] for f in required):
             raise ValueError(f"Chunks must have fields: {required}")
 
@@ -97,7 +97,7 @@ class EmbeddingService:
 
         with open(output_file, 'w') as f:
             for chunk in chunks:
-                custom_id = f"{chunk['source']}_{chunk['source_id']}_{chunk['chunk_index']}"
+                custom_id = f"chunk_{chunk['document_chunk_id']}"
                 request = {
                     "custom_id": custom_id,
                     "method": "POST",
@@ -163,7 +163,7 @@ class EmbeddingService:
 
         # Add embeddings to chunks
         for chunk in chunks:
-            custom_id = f"{chunk['source']}_{chunk['source_id']}_{chunk['chunk_index']}"
+            custom_id = f"chunk_{chunk['document_chunk_id']}"
             chunk["embedding"] = results.get(custom_id)
 
         successful = sum(1 for c in chunks if c.get("embedding") is not None)
