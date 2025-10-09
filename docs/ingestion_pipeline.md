@@ -93,20 +93,27 @@ Re-running same search skips PMC IDs already in table (ON CONFLICT DO NOTHING)
 
 ### Script
 ```bash
-python scripts/fetch_papers.py --batch-size 100
+# Interactive (small batches for testing)
+python scripts/fetch_papers.py --limit 100
+
+# Background (large batches, requires --confirm-large-job to skip prompt)
+nohup python scripts/fetch_papers.py --limit 25000 --confirm-large-job > fetch_papers.log 2>&1 &
 ```
 
 ### What it does
 1. Queries `pubmed_papers` WHERE `fetch_status='pending'` LIMIT batch_size
 2. For each PMC ID:
-   - Fetches full XML from NCBI Entrez API
+   - Fetches full XML from NCBI Entrez efetch API
    - Parses title, abstract, sections (using `PMCXMLParser`)
-   - Checks if document exists: `Document` WHERE `source='pubmed'` AND `source_id=pmc_id`
-   - If exists: UPSERT (replace with new content, update `updated_at`)
-   - If new: INSERT with `ingestion_status='fetched'`
+   - Fetches metadata from NCBI esummary API (authors, journal, DOI, etc.)
+   - UPSERT into `documents` table (source='pmc', source_id=pmc_id)
    - Updates `pubmed_papers.fetch_status='fetched'`
-3. Rate limiting: 3 requests/second (NCBI requirement)
+3. Rate limiting: 2 API calls per paper with conservative timing
+   - With API key: 0.15s between calls (~6.7 req/sec, ~0.3s per paper)
+   - Without API key: 0.4s between calls (~2.5 req/sec, ~0.8s per paper)
+   - Actual performance: ~0.6s per paper (~100 papers/minute)
 4. On failure: sets `fetch_status='failed'`, logs error
+5. Large job check (>1000 papers): Warns if not during off-peak hours (weekends or 9pm-5am ET weekdays)
 
 ### Output
 - Rows in `documents` table with `ingestion_status='fetched'`

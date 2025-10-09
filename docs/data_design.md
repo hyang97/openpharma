@@ -161,7 +161,7 @@ CREATE INDEX idx_pubmed_papers_fetch_status ON pubmed_papers(fetch_status);
 
 **Design Notes:**
 - No foreign key to `documents` (application-level enforcement)
-- Relationship: `documents.source_id = pubmed_papers.pmc_id` when `source='pubmed'`
+- Relationship: `documents.source_id = pubmed_papers.pmc_id` when `source='pmc'`
 - PMC prefix added only for display: `f"PMC{pmc_id}"`
 
 ---
@@ -173,7 +173,7 @@ Stores complete document content and metadata.
 ```sql
 CREATE TABLE documents (
   document_id SERIAL PRIMARY KEY,
-  source VARCHAR NOT NULL,                       -- "pubmed", "clinicaltrials", "fda"
+  source VARCHAR NOT NULL,                       -- "pmc", "clinicaltrials", "fda"
   source_id VARCHAR NOT NULL,                    -- "1234567" (PMC ID without prefix)
   title TEXT NOT NULL,
   abstract TEXT,
@@ -191,7 +191,7 @@ CREATE INDEX idx_documents_ingestion_status ON documents(ingestion_status);
 | Column | Type | Description |
 |--------|------|-------------|
 | `document_id` | SERIAL (PK) | Auto-incrementing primary key |
-| `source` | VARCHAR | Data source: "pubmed", "clinicaltrials", "fda" |
+| `source` | VARCHAR | Data source: "pmc", "clinicaltrials", "fda" |
 | `source_id` | VARCHAR | External ID (PMC ID, NCT number, etc.) |
 | `title` | TEXT | Document title |
 | `abstract` | TEXT | Abstract text (nullable) |
@@ -458,7 +458,7 @@ for chunk in chunks:
 ```python
 # Insert document
 doc = Document(
-    source="pubmed",
+    source="pmc",
     source_id="1234567",
     title="Diabetes Management Study",
     abstract="This study...",

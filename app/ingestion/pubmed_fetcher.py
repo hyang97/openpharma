@@ -4,15 +4,21 @@ Fetches research papers from PubMed Central Open Access subset.
 """
 from typing import List, Dict, Optional
 import time
+import os
 from Bio import Entrez
 import logging
+from dotenv import load_dotenv
 from .xml_parser import PMCXMLParser
 
 logger = logging.getLogger(__name__)
 
+# Load environment variables
+load_dotenv()
+
 # Configure Entrez (NCBI requires email for API usage)
-Entrez.email = "hyang97@gmail.com"  
-Entrez.tool = "OpenPharma" 
+Entrez.email = "hyang97@gmail.com"
+Entrez.tool = "OpenPharma"
+Entrez.api_key = os.getenv("NCBI_API_KEY", "")  # Optional: 10 req/sec with key, 3 req/sec without 
 
 
 class PubMedFetcher:
@@ -71,7 +77,7 @@ class PubMedFetcher:
             Dict with keys: source_id, title, abstract, full_text, metadata
         """
         try:
-            logger.info(f"Fetching details for PMC{pmc_id}")
+            logger.debug(f"Fetching details for PMC{pmc_id}")
 
             # Fetch full XML record
             handle = Entrez.efetch(
@@ -89,12 +95,18 @@ class PubMedFetcher:
                 logger.warning(f"Failed to parse XML for PMC{pmc_id}")
                 return None
 
-            time.sleep(0.34)  # NCBI rate limit: 3 requests/second
+            # NCBI rate limit: 10 req/sec with API key, 3 req/sec without
+            # Use conservative timing to avoid 429 errors (0.15s = ~6.7 req/sec, 0.4s = ~2.5 req/sec)
+            sleep_time = 0.15 if Entrez.api_key else 0.4
+            time.sleep(sleep_time)
 
             # Fetch summary metadata (authors, journal, dates, etc.)
             handle = Entrez.esummary(db="pmc", id=pmc_id)
             summary = Entrez.read(handle)
             handle.close()
+
+            # Rate limit after second API call
+            time.sleep(sleep_time)
 
             if not summary:
                 logger.warning(f"No summary found for PMC{pmc_id}")

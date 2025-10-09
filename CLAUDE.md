@@ -148,6 +148,10 @@ data/batches/               # Batch API files (gitignored)
   - **Regular API**: Instant results, standard pricing (~$100 for 100K papers)
   - **Batch API**: 24-hour turnaround, 50% cheaper (~$50 for 100K papers)
 - Rate limiting: NCBI API limited to 3 requests/second (0.34s sleep between calls)
+- **NCBI Large Job Policy**: Run large jobs (>1000 papers) during off-peak hours only:
+  - Weekends (anytime)
+  - Weekdays: 9pm - 5am Eastern Time
+  - Violation may result in IP blocking
 
 ## Success Metrics
 
