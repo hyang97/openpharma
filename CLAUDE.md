@@ -81,9 +81,10 @@ This is a learning-focused AI engineering project optimized for hands-on experie
 9. **No One-Off Scripts**: Avoid creating temporary Python scripts for debugging or database checks. Use bash commands with inline Python or docker-compose exec for ad-hoc operations.
 10. **Archive, Don't Delete**: When replacing or deprecating files, move them to `archive/` with a timestamp suffix (e.g., `old_script_20250108.py`) rather than deleting. This preserves project history for learning.
 11. **End-of-Session Workflow**: When the user asks to wrap up:
+    - Update `TODO.md` to mark completed tasks and add any new tasks discovered during the session
     - Review all code changes made during the session
     - Update all relevant design docs in `docs/` to reflect implementation changes
-    - Create a git commit with a short one-liner message summarizing the session's work
+    - Create a git commit with a one-line message summarizing the session's work (no multi-line messages, no emoji, no co-author tags)
 12. **Update Docs at Session End Only**: Do NOT update design docs incrementally during implementation - only update them at the end of the session during wrap-up.
 
 ## Code Structure

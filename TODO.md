@@ -1,27 +1,29 @@
 # OpenPharma TODO List
 
-Last updated: 2025-10-07
+Last updated: 2025-10-08
 
 ## Current Sprint: Decoupled Ingestion Pipeline
 
 ### Schema Changes
-- [ ] Add `PubMedPaper` model to `app/db/models.py`
+- [x] Add `PubMedPaper` model to `app/db/models.py`
   - Fields: `pmc_id` (PK), `discovered_at`, `fetch_status`
   - Status values: 'pending', 'fetched', 'failed'
-- [ ] Add `ingestion_status` field to `Document` model
+- [x] Add `ingestion_status` field to `Document` model
   - Values: 'fetched', 'chunked', 'embedded'
   - Default: 'fetched'
-- [ ] Create database migration for new schema
+- [x] Create database migration for new schema (reinitialized database)
+- [x] Add indexes for ingestion pipeline (fetch_status, ingestion_status, partial index on NULL embeddings)
 
-### Phase 1: Collect PMC IDs
-- [ ] Create `scripts/collect_pmc_ids.py`
+### Stage 1: Collect PMC IDs
+- [x] Create `scripts/collect_pmc_ids.py`
   - Search PubMed with configurable query
   - Insert PMC IDs into `pubmed_papers` table
-  - Use INSERT ... ON CONFLICT DO NOTHING for deduplication
-  - Support --query, --max-results arguments
-  - Default query: diabetes papers 2020-2025
+  - Use INSERT ... ON CONFLICT DO UPDATE for resetting fetch_status
+  - Support --query, --limit, --keyword, --start-date, --end-date, --date-field arguments
+  - Default query: diabetes papers 2020-2025 (open access only)
+  - Removed Journal Article[ptyp] filter (52K results vs 44)
 
-### Phase 2: Fetch Papers
+### Stage 2: Fetch Papers
 - [ ] Create `scripts/fetch_papers.py`
   - Query `pubmed_papers` WHERE `fetch_status='pending'`
   - Fetch XML using existing `PubMedFetcher`
@@ -32,7 +34,7 @@ Last updated: 2025-10-07
   - Support --batch-size argument
   - Rate limiting: 3 req/sec
 
-### Phase 3: Chunk Documents
+### Stage 3: Chunk Documents
 - [ ] Create `scripts/chunk_papers.py`
   - Query `documents` WHERE `ingestion_status='fetched'`
   - Delete old chunks if re-chunking
@@ -41,7 +43,7 @@ Last updated: 2025-10-07
   - Set `ingestion_status='chunked'`
   - Support --batch-size argument
 
-### Phase 4: Embed Chunks
+### Stage 4: Embed Chunks
 - [ ] Create `scripts/embed_chunks.py`
   - Query `document_chunks` WHERE `embedding IS NULL`
   - Use existing `EmbeddingService.embed_chunks()` for Regular API
@@ -50,7 +52,7 @@ Last updated: 2025-10-07
   - Support --batch-size argument
   - Log costs (already implemented in EmbeddingService)
 
-### Phase 4 (Batch API - Optional)
+### Stage 4 (Batch API - Optional)
 - [ ] Add `--use-batch-api` flag to `scripts/embed_chunks.py`
   - Call `EmbeddingService.submit_batch_embed()`
   - Save batch_id to file
@@ -62,22 +64,24 @@ Last updated: 2025-10-07
   - Update document `ingestion_status='embedded'`
 
 ### Testing
-- [ ] Test Phase 1: Collect 10 PMC IDs
-- [ ] Test Phase 2: Fetch those 10 papers
-- [ ] Test Phase 3: Chunk those papers
-- [ ] Test Phase 4: Embed chunks (Regular API)
+- [x] Test Stage 1: Collect 100 PMC IDs (52K available)
+- [ ] Test Stage 2: Fetch those papers
+- [ ] Test Stage 3: Chunk those papers
+- [ ] Test Stage 4: Embed chunks (Regular API)
 - [ ] Test full pipeline end-to-end
 - [ ] Test re-fetching (UPSERT behavior)
 - [ ] Test re-chunking (delete old chunks)
 
 ### Documentation
 - [x] Create `docs/ingestion_pipeline.md` with full design
-- [ ] Update `CLAUDE.md` with new pipeline architecture
-- [ ] Add monitoring queries to docs
+- [x] Update `CLAUDE.md` with new pipeline architecture and workflow guidelines
+- [x] Add monitoring queries to docs
 
 ### Cleanup
-- [ ] Archive old `scripts/ingest_papers.py` (replaced by 4-phase scripts)
-- [ ] Archive `test_pipeline.py` (was for testing monolithic approach)
+- [x] Move `docs/archive` to project-level `archive/`
+- [x] Move `openpharma_spec_v1.md` to `docs/project_spec.md`
+- [x] Move `test_pipeline.py` to `tests/test_pipeline.py`
+- [ ] Archive old `scripts/ingest_papers.py` (replaced by 4-stage scripts) - NOT YET CREATED
 
 ## Backlog (Future Phases)
 
