@@ -26,9 +26,19 @@ OpenPharma ingests research papers from PubMed Central and stores them in a norm
 
 ## Ingestion Pipeline
 
-**NOTE:** The ingestion pipeline has been redesigned as a decoupled 4-phase system. See `docs/ingestion_pipeline.md` for the complete architecture.
+**NOTE:** The ingestion pipeline uses a decoupled 4-phase architecture for resumability and cost efficiency. See `docs/ingestion_pipeline.md` for the complete design.
 
-The original monolithic pipeline consisted of four main stages:
+**4-Phase Architecture:**
+```
+Phase 1: Search PubMed → Store PMC IDs (pubmed_papers table)
+Phase 2: Fetch Papers → Store Documents (documents table)
+Phase 3: Chunk Documents → Create Chunks with NULL embeddings (document_chunks table)
+Phase 4: Embed Chunks → Update Embeddings (document_chunks.embedding)
+```
+
+Each phase stores persistent state and can be run independently. The original monolithic approach is archived in `scripts/ingest_papers.py`.
+
+**Core Processing Steps:**
 
 ```
 1. Fetch → 2. Parse → 3. Chunk → 4. Embed → 5. Store
@@ -113,46 +123,147 @@ The original monolithic pipeline consisted of four main stages:
 
 ## Database Schema
 
-### `documents` Table
+### Schema Overview
 
-Stores document-level metadata and content.
+Three tables support the 4-phase ingestion pipeline:
+
+| Table | Purpose | Used By |
+|-------|---------|---------|
+| `pubmed_papers` | Track PMC IDs and fetch status | Phase 1 & 2 |
+| `documents` | Store document content and metadata | Phase 2, 3, 4 |
+| `document_chunks` | Store chunks and embeddings | Phase 3 & 4 |
+
+---
+
+### Table 1: `pubmed_papers`
+
+Tracks PMC IDs discovered from searches and their fetch status.
+
+```sql
+CREATE TABLE pubmed_papers (
+  pmc_id VARCHAR PRIMARY KEY,                    -- "1234567" (numeric only, no PMC prefix)
+  discovered_at TIMESTAMP DEFAULT NOW(),
+  fetch_status VARCHAR DEFAULT 'pending'         -- 'pending', 'fetched', 'failed'
+);
+
+CREATE INDEX idx_pubmed_papers_fetch_status ON pubmed_papers(fetch_status);
+```
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `pmc_id` | VARCHAR (PK) | Numeric PMC ID (e.g., "1234567"), no "PMC" prefix |
+| `discovered_at` | TIMESTAMP | When PMC ID was first discovered |
+| `fetch_status` | VARCHAR | 'pending', 'fetched', or 'failed' |
+
+**Indexes:**
+- Primary key on `pmc_id`
+- B-tree index on `fetch_status` (for `WHERE fetch_status='pending'` queries)
+
+**Design Notes:**
+- No foreign key to `documents` (application-level enforcement)
+- Relationship: `documents.source_id = pubmed_papers.pmc_id` when `source='pubmed'`
+- PMC prefix added only for display: `f"PMC{pmc_id}"`
+
+---
+
+### Table 2: `documents`
+
+Stores complete document content and metadata.
 
 ```sql
 CREATE TABLE documents (
   document_id SERIAL PRIMARY KEY,
-  source VARCHAR NOT NULL,           -- "pubmed", "clinicaltrials", "fda"
-  source_id VARCHAR NOT NULL,        -- "1234567" (PMC ID without "PMC" prefix)
+  source VARCHAR NOT NULL,                       -- "pubmed", "clinicaltrials", "fda"
+  source_id VARCHAR NOT NULL,                    -- "1234567" (PMC ID without prefix)
   title TEXT NOT NULL,
   abstract TEXT,
-  full_text TEXT,                    -- Concatenated sections (see below)
-  doc_metadata JSONB,                -- Authors, journal, section_offsets, etc.
+  full_text TEXT,                                -- Concatenated sections (see Section Storage)
+  doc_metadata JSONB,                            -- Authors, journal, section_offsets, etc.
+  ingestion_status VARCHAR DEFAULT 'fetched',    -- 'fetched', 'chunked', 'embedded'
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP,
   UNIQUE(source, source_id)
 );
+
+CREATE INDEX idx_documents_ingestion_status ON documents(ingestion_status);
 ```
 
-### `document_chunks` Table
+| Column | Type | Description |
+|--------|------|-------------|
+| `document_id` | SERIAL (PK) | Auto-incrementing primary key |
+| `source` | VARCHAR | Data source: "pubmed", "clinicaltrials", "fda" |
+| `source_id` | VARCHAR | External ID (PMC ID, NCT number, etc.) |
+| `title` | TEXT | Document title |
+| `abstract` | TEXT | Abstract text (nullable) |
+| `full_text` | TEXT | Concatenated sections with headers |
+| `doc_metadata` | JSONB | Flexible metadata (authors, journal, section_offsets, etc.) |
+| `ingestion_status` | VARCHAR | 'fetched', 'chunked', or 'embedded' |
+| `created_at` | TIMESTAMP | When row was first inserted |
+| `updated_at` | TIMESTAMP | When content was last replaced (NULL = never updated) |
 
-Stores chunk-level content and embeddings for RAG retrieval.
+**Indexes:**
+- Primary key on `document_id`
+- Unique constraint on `(source, source_id)`
+- B-tree index on `ingestion_status` (for `WHERE ingestion_status='fetched'` queries)
+
+**Design Notes:**
+- `full_text` contains ALL sections concatenated (see Section Storage Strategy below)
+- `doc_metadata['section_offsets']` stores character positions for section recovery
+- `ingestion_status` tracks progress through Phase 2 → 3 → 4
+- UPSERT on `(source, source_id)` replaces old documents during updates
+
+---
+
+### Table 3: `document_chunks`
+
+Stores chunked content and vector embeddings for RAG retrieval.
 
 ```sql
 CREATE TABLE document_chunks (
   document_chunk_id SERIAL PRIMARY KEY,
   document_id INTEGER NOT NULL,
-  section VARCHAR,                   -- "introduction", "methods", "results", etc.
-  chunk_index INTEGER NOT NULL,      -- Order within document (0, 1, 2...)
-  content TEXT NOT NULL,             -- Raw chunk text (without context)
-  char_start INTEGER NOT NULL,       -- Character offset in full_text
-  char_end INTEGER NOT NULL,         -- Character offset in full_text
-  token_count INTEGER NOT NULL,      -- Number of tokens (~512)
-  embedding VECTOR(1536),            -- OpenAI embedding (context-enhanced)
+  section VARCHAR,                               -- "abstract", "introduction", "methods", etc.
+  chunk_index INTEGER NOT NULL,                  -- Order within document (0, 1, 2...)
+  content TEXT NOT NULL,                         -- Raw chunk text (without context)
+  char_start INTEGER NOT NULL,                   -- Character offset in full_text
+  char_end INTEGER NOT NULL,                     -- Character offset in full_text
+  token_count INTEGER NOT NULL,                  -- Number of tokens (~512)
+  embedding VECTOR(1536),                        -- OpenAI embedding (NULL = needs embedding)
   created_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE INDEX idx_chunks_document ON document_chunks(document_id);
-CREATE INDEX idx_chunks_embedding ON document_chunks USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX idx_chunks_embedding ON document_chunks
+  USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 64);
+CREATE INDEX idx_chunks_needs_embedding ON document_chunks(document_chunk_id)
+  WHERE embedding IS NULL;
 ```
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `document_chunk_id` | SERIAL (PK) | Auto-incrementing primary key |
+| `document_id` | INTEGER | Foreign key to parent document (not enforced) |
+| `section` | VARCHAR | Section name: "abstract", "methods", "results", etc. |
+| `chunk_index` | INTEGER | Order within document (0, 1, 2...) |
+| `content` | TEXT | Raw chunk text (without title/section context) |
+| `char_start` | INTEGER | Character offset in parent `full_text` |
+| `char_end` | INTEGER | Character offset in parent `full_text` |
+| `token_count` | INTEGER | Number of tokens in chunk (~512) |
+| `embedding` | VECTOR(1536) | OpenAI embedding (NULL until Phase 4 completes) |
+| `created_at` | TIMESTAMP | When chunk was created |
+
+**Indexes:**
+- Primary key on `document_chunk_id`
+- B-tree index on `document_id` (for joining to documents)
+- HNSW index on `embedding` (for vector similarity search, m=16, ef_construction=64)
+- Partial index on `document_chunk_id WHERE embedding IS NULL` (for Phase 4 queries)
+
+**Design Notes:**
+- `embedding` is NULL when chunk is first created (Phase 3)
+- Embedding generated from: `f"Document: {title}\nSection: {section}\n\n{content}"`
+- Partial index shrinks as embeddings complete (efficient storage)
+- `document_chunk_id` used for Batch API tracking (cleaner than denormalizing source/source_id)
 
 ---
 
@@ -399,6 +510,30 @@ for chunk in chunks:
 - Simpler schema (one `full_text` column vs many section columns)
 - Flexible for papers with varying section structures
 - Easy to reconstruct sections when needed
+
+### Why not store source/source_id on chunks?
+- **Previous design:** Denormalized `source` and `source_id` on chunks for Batch API tracking
+- **Current design:** Use `document_chunk_id` as unique identifier
+- **Rationale:**
+  - Cleaner schema (no redundant data)
+  - `document_chunk_id` is already unique and indexed
+  - For Batch API: use `custom_id = f"chunk_{document_chunk_id}"`
+  - Can still join to `documents` table when source info needed
+
+### Why partial index on NULL embeddings?
+- Query pattern: `SELECT * FROM document_chunks WHERE embedding IS NULL LIMIT 1000`
+- Initially 10M chunks with NULL embeddings (full table scan is expensive)
+- Partial index only stores rows matching `WHERE embedding IS NULL`
+- Index shrinks as embeddings complete (efficient storage)
+- Perfect for Phase 4 queries that repeatedly fetch unembed chunks
+
+### Why indexes on status columns?
+- **`pubmed_papers.fetch_status`**: Phase 2 queries this repeatedly over 9-hour fetch window
+- **`documents.ingestion_status`**: Phase 3/4 query this for batch processing
+- **Low cardinality** (3-4 values) normally bad for indexes, but:
+  - High selectivity during active ingestion (many rows in one status)
+  - Frequent queries justify small index overhead
+  - B-tree indexes are tiny for status columns (10-20% of table size)
 
 ---
 

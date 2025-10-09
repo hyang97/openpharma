@@ -6,7 +6,7 @@ Run this script to set up your database:
 """
 from sqlalchemy import text
 from .database import engine, Base
-from .models import Document, DocumentChunk
+from .models import PubMedPaper, Document, DocumentChunk
 
 
 def init_db():
@@ -20,40 +20,23 @@ def init_db():
         conn.commit()
         print("✓ pgvector extension enabled")
 
-    # Create all tables
+    # Create all tables (SQLAlchemy will create indexes defined in __table_args__)
     Base.metadata.create_all(bind=engine)
     print("✓ Database tables created")
-
-    # Create HNSW index for vector similarity search
-    with engine.connect() as conn:
-        # Check if index already exists
-        result = conn.execute(text("""
-            SELECT indexname FROM pg_indexes
-            WHERE tablename = 'document_chunks'
-            AND indexname = 'idx_chunks_embedding_hnsw'
-        """))
-
-        if result.fetchone() is None:
-            print("Creating HNSW index on embeddings (this may take a while for large datasets)...")
-            conn.execute(text("""
-                CREATE INDEX idx_chunks_embedding_hnsw
-                ON document_chunks
-                USING hnsw (embedding vector_cosine_ops)
-                WITH (m = 16, ef_construction = 64)
-            """))
-            conn.commit()
-            print("✓ HNSW vector similarity index created")
-        else:
-            print("✓ HNSW vector similarity index already exists")
+    print("✓ Database indexes created")
 
     print("\n✅ Database initialization complete!")
     print("\nTables created:")
+    print("  - pubmed_papers (PMC ID tracking for Phase 1 & 2)")
     print("  - documents (metadata storage)")
     print("  - document_chunks (chunked content with embeddings)")
     print("\nIndexes created:")
+    print("  - INDEX(fetch_status) on pubmed_papers")
     print("  - UNIQUE(source, source_id) on documents")
+    print("  - INDEX(ingestion_status) on documents")
     print("  - INDEX(document_id) on document_chunks")
-    print("  - HNSW INDEX(embedding) on document_chunks")
+    print("  - HNSW INDEX(embedding) on document_chunks (m=16, ef_construction=64)")
+    print("  - PARTIAL INDEX(document_chunk_id) on document_chunks WHERE embedding IS NULL")
 
 
 if __name__ == "__main__":
