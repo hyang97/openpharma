@@ -40,7 +40,8 @@ Last updated: 2025-10-10
   - Added HTTP timeout (30s) to prevent hangs
   - Improved logging: log outcomes not attempts, configurable levels
   - Log file archiving (archive old logs, use consistent naming)
-- [ ] Complete fetch of all ~30K papers (running overnight, ~11K/30K done as of 12:45am)
+  - Extended timeout (120s) for --retry-failed option to handle large papers
+- [x] Complete fetch of all papers (52,014/52,014 fetched and chunked successfully)
 
 ### Stage 3: Chunk Documents
 - [x] Create `scripts/chunk_papers.py`
@@ -58,7 +59,7 @@ Last updated: 2025-10-10
   - Chunker now handles section extraction internally
   - Title-only document handling (for corrections/errata)
   - Reduced logging verbosity (DEBUG for per-document, INFO for progress)
-- [ ] Test chunking on fetched documents
+- [x] Complete chunking of all fetched documents (52,014/52,014 chunked, 100% complete)
 
 ### Stage 4: Embed Chunks
 - [ ] Create `scripts/embed_chunks.py`
@@ -82,9 +83,9 @@ Last updated: 2025-10-10
 
 ### Testing
 - [x] Test Stage 1: Collect 100 PMC IDs (52K available)
-- [x] Test Stage 2: Fetch papers (~11K fetched successfully, <0.2% failure rate)
-- [x] Test Stage 3: Chunk 50 papers (49 successful, 1 title-only doc, ~40 chunks/doc avg)
-- [ ] Test Stage 3: Chunk all fetched documents (after fetch completes)
+- [x] Test Stage 2: Fetch papers (52,014 papers fetched successfully)
+- [x] Test Stage 3: Chunk papers (52,014 documents chunked into 1.89M chunks, avg 36 chunks/doc)
+- [x] Data quality validation (verified text extraction, section distribution, journal quality)
 - [ ] Test Stage 4: Embed chunks (Regular API)
 - [ ] Test full pipeline end-to-end
 - [ ] Test re-fetching (UPSERT behavior)
@@ -98,6 +99,7 @@ Last updated: 2025-10-10
 - [x] Document NCBI rate limiting and off-peak hours policy
 - [x] Update `docs/cheatsheet.md` with Stage 3 commands
 - [x] Update `docs/logging.md` with "log outcomes not attempts" best practice
+- [x] Add database connection details to CLAUDE.md (postgres service, openpharma db, admin user)
 - [ ] Consider renaming scripts with stage prefixes (stage1_*, stage2_*, stage3_*)
 
 ### Cleanup
@@ -107,6 +109,12 @@ Last updated: 2025-10-10
 - [ ] Archive old `scripts/ingest_papers.py` (replaced by 4-stage scripts) - NOT YET CREATED
 
 ## Backlog (Future Phases)
+
+### Phase 1 Optional Enhancements
+- [ ] Refine diabetes search with MeSH terms to catch edge cases
+  - Query: `(diabetes[MeSH] OR diabetes[Title/Abstract]) AND open access[filter] AND 2020/01/01:2025/12/31[pdat]`
+  - May add a few thousand more papers beyond current 52K
+  - Test with --limit 100 first to estimate size increase
 
 ### Phase 2 Enhancements
 - [ ] Add `PubMedSearch` table to track search queries
@@ -147,3 +155,5 @@ Last updated: 2025-10-10
 - NCBI rate limiting: Conservative 0.15s between calls with API key (~100 papers/minute actual performance)
 - Large jobs (>1000 papers) must complete within off-peak hours (weekends or 9pm-5am ET weekdays)
 - Background jobs use nohup inside container with --confirm-large-job flag
+- Stage 1-3 complete: 52K papers collected, fetched, and chunked into 1.89M chunks (736M tokens)
+- Estimated embedding cost: $14.73 regular API, $7.36 batch API (text-embedding-3-small)

@@ -68,7 +68,12 @@ IMPORTANT: NCBI requests large jobs (>1000 papers) run during off-peak hours:
     # Always log to the same active file
     setup_logging(level=log_level, log_file="logs/fetch_papers.log")
 
-    fetcher = PubMedFetcher()
+    # Use longer timeout when retrying failed papers (some failed due to size/timeout)
+    timeout = 120 if args.retry_failed else 30
+    fetcher = PubMedFetcher(timeout=timeout)
+
+    if args.retry_failed:
+        logger.info(f"Retry mode: Using extended timeout ({timeout}s) for large papers")
 
     # Get pending papers (and optionally failed papers)
     with Session(engine) as session:
