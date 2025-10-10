@@ -5,6 +5,7 @@ Fetches full XML for pending PMC IDs and stores parsed content in database.
 """
 import argparse
 import logging
+import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
@@ -48,9 +49,24 @@ IMPORTANT: NCBI requests large jobs (>1000 papers) run during off-peak hours:
                        help="Also retry papers that previously failed (default: skip failed papers)")
     parser.add_argument("--confirm-large-job", action="store_true",
                        help="Skip confirmation prompt for large jobs (use for background jobs)")
+    parser.add_argument("--log-level", type=str,
+                       choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+                       help="Logging level (default: LOG_LEVEL env var or INFO)")
 
     args = parser.parse_args()
-    setup_logging(level="INFO")
+
+    # Precedence: CLI arg > env var > default
+    log_level = args.log_level or os.getenv("LOG_LEVEL", "INFO")
+
+    # Archive old log if it exists
+    from pathlib import Path
+    old_log = Path("logs/fetch_papers.log")
+    if old_log.exists():
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        old_log.rename(f"logs/fetch_papers_{timestamp}.log")
+
+    # Always log to the same active file
+    setup_logging(level=log_level, log_file="logs/fetch_papers.log")
 
     fetcher = PubMedFetcher()
 
@@ -87,7 +103,6 @@ IMPORTANT: NCBI requests large jobs (>1000 papers) run during off-peak hours:
         is_off_peak = is_weekend or (21 <= et_now.hour or et_now.hour < 5)  # 9pm-5am ET
 
         # Estimate based on rate limiting (2 API calls per paper, conservative timing)
-        import os
         has_api_key = bool(os.getenv("NCBI_API_KEY"))
         time_per_paper = 0.3 if has_api_key else 0.8  # Conservative: ~6.7 req/sec with key, ~2.5 req/sec without
         est_hours = (len(pending_papers) * time_per_paper) / 3600
@@ -158,6 +173,7 @@ IMPORTANT: NCBI requests large jobs (>1000 papers) run during off-peak hours:
                 session.commit()
 
             success_count += 1
+            logger.debug(f"[{idx}/{len(pending_papers)}] Successfully fetched PMC{pmc_id}")
 
             # Log progress every 100 papers
             if idx % 100 == 0:

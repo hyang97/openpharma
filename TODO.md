@@ -1,6 +1,6 @@
 # OpenPharma TODO List
 
-Last updated: 2025-10-08
+Last updated: 2025-10-10
 
 ## Current Sprint: Decoupled Ingestion Pipeline
 
@@ -24,24 +24,41 @@ Last updated: 2025-10-08
   - Removed Journal Article[ptyp] filter (52K results vs 44)
 
 ### Stage 2: Fetch Papers
-- [ ] Create `scripts/fetch_papers.py`
+- [x] Create `scripts/fetch_papers.py`
   - Query `pubmed_papers` WHERE `fetch_status='pending'`
   - Fetch XML using existing `PubMedFetcher`
   - UPSERT into `documents` table (replace if exists)
   - Set `ingestion_status='fetched'`
   - Update `pubmed_papers.fetch_status='fetched'`
   - Handle failures: set `fetch_status='failed'`
-  - Support --batch-size argument
-  - Rate limiting: 3 req/sec
+  - Support --limit and --retry-failed arguments
+  - Support --confirm-large-job for background jobs
+  - Rate limiting: Conservative 0.15s between calls with API key (~6.7 req/sec)
+  - NCBI off-peak hours check for large jobs (>1000 papers)
+  - Added NCBI API key support to pubmed_fetcher.py
+  - Changed source field from 'pubmed' to 'pmc' for accuracy
+  - Added HTTP timeout (30s) to prevent hangs
+  - Improved logging: log outcomes not attempts, configurable levels
+  - Log file archiving (archive old logs, use consistent naming)
+- [ ] Complete fetch of all ~30K papers (running overnight, ~11K/30K done as of 12:45am)
 
 ### Stage 3: Chunk Documents
-- [ ] Create `scripts/chunk_papers.py`
+- [x] Create `scripts/chunk_papers.py`
   - Query `documents` WHERE `ingestion_status='fetched'`
   - Delete old chunks if re-chunking
   - Use existing `DocumentChunker`
   - Insert chunks with `embedding=NULL`
   - Set `ingestion_status='chunked'`
-  - Support --batch-size argument
+  - Support --limit and --rechunk-all arguments
+  - Log file archiving matching fetch_papers pattern
+  - Use yield_per(100) for memory-efficient streaming (handles 30K+ docs)
+  - Progress logging every 100 documents
+- [x] Refactor `DocumentChunker` to extract sections from full_text
+  - Simplified script interface (just pass title, full_text, section_offsets)
+  - Chunker now handles section extraction internally
+  - Title-only document handling (for corrections/errata)
+  - Reduced logging verbosity (DEBUG for per-document, INFO for progress)
+- [ ] Test chunking on fetched documents
 
 ### Stage 4: Embed Chunks
 - [ ] Create `scripts/embed_chunks.py`
@@ -65,8 +82,9 @@ Last updated: 2025-10-08
 
 ### Testing
 - [x] Test Stage 1: Collect 100 PMC IDs (52K available)
-- [ ] Test Stage 2: Fetch those papers
-- [ ] Test Stage 3: Chunk those papers
+- [x] Test Stage 2: Fetch papers (~11K fetched successfully, <0.2% failure rate)
+- [x] Test Stage 3: Chunk 50 papers (49 successful, 1 title-only doc, ~40 chunks/doc avg)
+- [ ] Test Stage 3: Chunk all fetched documents (after fetch completes)
 - [ ] Test Stage 4: Embed chunks (Regular API)
 - [ ] Test full pipeline end-to-end
 - [ ] Test re-fetching (UPSERT behavior)
@@ -76,6 +94,11 @@ Last updated: 2025-10-08
 - [x] Create `docs/ingestion_pipeline.md` with full design
 - [x] Update `CLAUDE.md` with new pipeline architecture and workflow guidelines
 - [x] Add monitoring queries to docs
+- [x] Create `docs/cheatsheet.md` with common commands
+- [x] Document NCBI rate limiting and off-peak hours policy
+- [x] Update `docs/cheatsheet.md` with Stage 3 commands
+- [x] Update `docs/logging.md` with "log outcomes not attempts" best practice
+- [ ] Consider renaming scripts with stage prefixes (stage1_*, stage2_*, stage3_*)
 
 ### Cleanup
 - [x] Move `docs/archive` to project-level `archive/`
@@ -116,7 +139,11 @@ Last updated: 2025-10-08
 
 ## Notes
 - PMC IDs stored as numbers only (e.g., "1234567"), not "PMC1234567"
+- Source field set to 'pmc' (not 'pubmed') for accuracy
 - No foreign key constraint between `pubmed_papers` and `documents` (multi-source design)
 - UPSERT replaces old documents (no version history needed)
 - NULL embeddings indicate chunks needing embedding
 - Use `[lr]` date field for finding updated papers
+- NCBI rate limiting: Conservative 0.15s between calls with API key (~100 papers/minute actual performance)
+- Large jobs (>1000 papers) must complete within off-peak hours (weekends or 9pm-5am ET weekdays)
+- Background jobs use nohup inside container with --confirm-large-job flag

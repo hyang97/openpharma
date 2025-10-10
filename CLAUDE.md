@@ -55,9 +55,10 @@ The project follows a phased development approach across three phases:
   - UNIQUE constraint on (source, source_id) for deduplication
 - **LLM Strategy**: Hybrid local (Ollama) + cloud (OpenAI) via environment configuration
 - **Deployment**: Local Docker development, GCP Cloud Run for demos (planned)
-- **Logging**: Python logging module with configurable levels (DEBUG/INFO/WARNING/ERROR/CRITICAL)
+- **Logging**: Python logging module with configurable levels (see `docs/logging.md`)
+  - Log outcomes, not attempts (reduces noise)
   - API logs: `logs/openpharma.log` (static filename)
-  - Batch scripts: timestamped filenames
+  - Script logs: Active file (e.g., `logs/fetch_papers.log`) archived with timestamp on next run
 - **Orchestration**: LangChain + LangGraph for agentic workflows (Phase 2+)
 
 ### Key Design Patterns
@@ -114,7 +115,8 @@ docs/
 ├── ingestion_pipeline.md   # 4-stage decoupled pipeline architecture
 ├── data_design.md          # Database schema and storage strategy
 ├── embedding_service.md    # EmbeddingService API reference
-└── logging.md              # Logging guide and best practices
+├── logging.md              # Logging guide and best practices
+└── cheatsheet.md           # Common commands reference
 
 tests/
 └── test_pipeline.py        # Integration tests for ingestion pipeline
