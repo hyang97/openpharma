@@ -95,10 +95,6 @@ class DocumentChunker:
             if end_idx >= len(tokens):
                 break
 
-        logger.info(
-            f"Chunked {self.count_tokens(text)} tokens from section '{section}' into "
-            f"{len(chunks)} chunks"
-        )
         return chunks
 
     def chunk_document(self, document: Dict) -> List[Dict]:
@@ -108,48 +104,52 @@ class DocumentChunker:
         Args:
             document: Dict with keys:
                 - title: Document title
-                - abstract: Abstract text (optional)
-                - sections: Dict mapping section names to text (body sections only)
-                - metadata: Must contain 'section_offsets' with char positions
+                - full_text: Full article text, with all sections and headers
+                - section_offsets: Contains section, char_start, and char_end
 
         Returns:
             List of chunk dicts ready for database insertion
         """
         all_chunks = []
-        doc_title = document.get("title", "")
-        abstract = document.get("abstract", "")
-        sections = document.get("sections", {})
-        section_offsets = document.get("metadata", {}).get("section_offsets", [])
+        title = document.get("title", "")
+        full_text = document.get("full_text", "")
+        section_offsets = document.get("section_offsets", [])
 
-        # Create a lookup for section character offsets
-        section_offset_map = {
-            offset["section"]: offset["char_start"]
-            for offset in section_offsets
-        }
-
-        # Skip title - it's already in full_text for completeness, but we don't chunk it
-        # because it's short and included in every chunk's embedding_text anyway
-
-        # Chunk abstract if it exists
-        if abstract and "abstract" in section_offset_map:
-            abstract_chunks = self.chunk_text(
-                text=abstract,
-                section="abstract",
-                doc_title=doc_title,
-                section_char_start=section_offset_map["abstract"]
-            )
-            all_chunks.extend(abstract_chunks)
+        # Create sections: {"introduction": "text...", "methods": "text...", ...}, skip title
+        sections = {}
+        section_starts = {}
+        for section in section_offsets:
+            section_name = section["section"]
+            if section_name in ["title"]:
+                continue
+            
+            # Extract section text from full_text 
+            char_start = section["char_start"]
+            char_end = section["char_end"]
+            section_text = full_text[char_start:char_end].strip()
+            sections[section_name] = section_text
+            section_starts[section_name] = char_start
 
         # Chunk each body section separately
         for section_name, section_text in sections.items():
             # Get the character offset for this section in full_text
-            section_char_start = section_offset_map.get(section_name, 0)
+            char_start = section_starts.get(section_name, 0)
 
             section_chunks = self.chunk_text(
                 text=section_text,
                 section=section_name,
-                doc_title=doc_title,
-                section_char_start=section_char_start
+                doc_title=title,
+                section_char_start=char_start
+            )
+            all_chunks.extend(section_chunks)
+
+        # Special case: title-only document
+        if not all_chunks and title:
+            section_chunks = self.chunk_text(
+                text=title, 
+                section="N/A",
+                doc_title="Title-Only Article",
+                section_char_start=0
             )
             all_chunks.extend(section_chunks)
 
@@ -157,9 +157,9 @@ class DocumentChunker:
         for global_index, chunk in enumerate(all_chunks):
             chunk["chunk_index"] = global_index
 
-        logger.info(
-            f"Document '{doc_title[:50]}...' chunked into "
+        logger.debug(
+            f"Document '{title[:50]}...' chunked into "
             f"{len(all_chunks)} total chunks across "
-            f"{len(sections) + (1 if abstract else 0) + (1 if doc_title else 0)} sections"
+            f"{len(sections)} sections"
         )
         return all_chunks

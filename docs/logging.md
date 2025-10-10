@@ -91,7 +91,27 @@ logger.info(f"Error occurred: {e}")  # Should be .error()
 logger.error("Starting process")     # Should be .info()
 ```
 
-### 2. Include context in messages
+### 2. Log outcomes, not attempts
+
+Log when something completes (success or failure), not when it starts. This reduces noise and makes logs more actionable.
+
+```python
+# ✅ Good - logs outcome
+paper_data = fetcher.fetch_paper_details(pmc_id)
+if not paper_data:
+    logger.warning(f"Failed to fetch PMC{pmc_id}")
+else:
+    logger.debug(f"Successfully fetched PMC{pmc_id}")
+
+# ❌ Bad - logs attempt (adds noise, doesn't confirm completion)
+logger.debug(f"Fetching PMC{pmc_id}")
+paper_data = fetcher.fetch_paper_details(pmc_id)
+```
+
+**Exception:** It's okay to log attempts if the operation could hang (but with proper timeouts, this shouldn't happen).
+
+
+### 3. Include context in messages
 
 ```python
 # ✅ Good - tells you what failed and why
@@ -101,7 +121,7 @@ logger.error(f"Failed to parse PMC{pmc_id}: {e}", exc_info=True)
 logger.error("Parse failed")
 ```
 
-### 3. Use exc_info for exceptions
+### 4. Use exc_info for exceptions
 
 ```python
 try:
@@ -114,7 +134,7 @@ except Exception as e:
     logger.error(f"Operation failed: {e}")
 ```
 
-### 4. Don't log sensitive data
+### 5. Don't log sensitive data
 
 ```python
 # ❌ Bad - logs API key

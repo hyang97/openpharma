@@ -4,6 +4,7 @@ Fetches, parses, chunks, embeds, and stores papers in the database.
 """
 import os
 import argparse
+from datetime import datetime
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from app.db.database import engine, Base
@@ -158,7 +159,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    setup_logging(level=args.log_level)
+    # Setup timestamped log file in logs/ directory
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = f"logs/ingest_papers_{timestamp}.log"
+    setup_logging(level=args.log_level, log_file=log_file)
 
     ingest_papers(
         max_results=args.max_results,

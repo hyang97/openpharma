@@ -18,7 +18,10 @@ load_dotenv()
 # Configure Entrez (NCBI requires email for API usage)
 Entrez.email = "hyang97@gmail.com"
 Entrez.tool = "OpenPharma"
-Entrez.api_key = os.getenv("NCBI_API_KEY", "")  # Optional: 10 req/sec with key, 3 req/sec without 
+Entrez.api_key = os.getenv("NCBI_API_KEY", "")  # Optional: 10 req/sec with key, 3 req/sec without
+
+# HTTP timeout for all NCBI requests (seconds)
+HTTP_TIMEOUT = 30 
 
 
 class PubMedFetcher:
@@ -53,7 +56,8 @@ class PubMedFetcher:
                 term=query,
                 retmax=max_results,
                 retstart=start_index,
-                sort="relevance"
+                sort="relevance",
+                timeout=HTTP_TIMEOUT
             )
             record = Entrez.read(handle)
             handle.close()
@@ -77,14 +81,13 @@ class PubMedFetcher:
             Dict with keys: source_id, title, abstract, full_text, metadata
         """
         try:
-            logger.debug(f"Fetching details for PMC{pmc_id}")
-
             # Fetch full XML record
             handle = Entrez.efetch(
                 db="pmc",
                 id=pmc_id,
                 rettype="full",
-                retmode="xml"
+                retmode="xml",
+                timeout=HTTP_TIMEOUT
             )
             xml_content = handle.read()
             handle.close()
@@ -101,7 +104,7 @@ class PubMedFetcher:
             time.sleep(sleep_time)
 
             # Fetch summary metadata (authors, journal, dates, etc.)
-            handle = Entrez.esummary(db="pmc", id=pmc_id)
+            handle = Entrez.esummary(db="pmc", id=pmc_id, timeout=HTTP_TIMEOUT)
             summary = Entrez.read(handle)
             handle.close()
 

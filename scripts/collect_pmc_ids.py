@@ -6,6 +6,7 @@ in the pubmed_papers table for later fetching.
 """
 import argparse
 import logging
+from datetime import datetime
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
@@ -57,7 +58,16 @@ For custom queries, always include 'open access[filter]' to ensure full-text ava
                        help="Date field to search: pdat=publication date, lr=last revision, crdt=created (default: pdat)")
 
     args = parser.parse_args()
-    setup_logging(level="INFO")
+
+    # Archive old log if it exists
+    from pathlib import Path
+    old_log = Path("logs/collect_pmc_ids.log")
+    if old_log.exists():
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        old_log.rename(f"logs/collect_pmc_ids_{timestamp}.log")
+
+    # Always log to the same active file
+    setup_logging(level="INFO", log_file="logs/collect_pmc_ids.log")
 
     # Build query
     if args.query:
