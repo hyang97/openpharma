@@ -27,9 +27,10 @@ HTTP_TIMEOUT = 30
 class PubMedFetcher:
     """Fetches research papers from PubMed Central Open Access."""
 
-    def __init__(self, email: Optional[str] = None):
+    def __init__(self, email: Optional[str] = None, timeout: int = HTTP_TIMEOUT):
         if email:
             Entrez.email = email
+        self.timeout = timeout
         self.xml_parser = PMCXMLParser()
 
     def search_papers(
@@ -57,7 +58,7 @@ class PubMedFetcher:
                 retmax=max_results,
                 retstart=start_index,
                 sort="relevance",
-                timeout=HTTP_TIMEOUT
+                timeout=self.timeout
             )
             record = Entrez.read(handle)
             handle.close()
@@ -87,7 +88,7 @@ class PubMedFetcher:
                 id=pmc_id,
                 rettype="full",
                 retmode="xml",
-                timeout=HTTP_TIMEOUT
+                timeout=self.timeout
             )
             xml_content = handle.read()
             handle.close()
@@ -104,7 +105,7 @@ class PubMedFetcher:
             time.sleep(sleep_time)
 
             # Fetch summary metadata (authors, journal, dates, etc.)
-            handle = Entrez.esummary(db="pmc", id=pmc_id, timeout=HTTP_TIMEOUT)
+            handle = Entrez.esummary(db="pmc", id=pmc_id, timeout=self.timeout)
             summary = Entrez.read(handle)
             handle.close()
 

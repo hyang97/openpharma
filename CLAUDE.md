@@ -37,6 +37,7 @@ The project follows a phased development approach across three phases:
 
 ### Infrastructure Choices
 - **Vector Store**: Local Postgres + pgvector (cost-effective for <1M documents)
+- **Database**: Service name `postgres`, database `openpharma`, user `admin` (use in docker-compose exec commands)
 - **Schema Design**:
   - `pubmed_papers` table: Tracks PMC IDs and fetch status (NEW - Phase 1)
     - `pmc_id` (PK): Numeric ID only (e.g., "1234567", not "PMC1234567")
