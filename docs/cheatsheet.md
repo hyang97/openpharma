@@ -57,24 +57,24 @@ python -m app.db.init_db
 
 ```bash
 # Stage 1: Collect PMC IDs
-docker-compose exec api python -m scripts.collect_pmc_ids --limit 50
+docker-compose exec api python -m scripts.stage_1_collect_ids --limit 50
 
 # Stage 2: Fetch Papers
-python -m scripts.fetch_papers --limit 100                                            # Interactive, run within container
-docker-compose exec api python -m scripts.fetch_papers --retry-failed                 # Retry failures, run outside of container
-docker-compose exec api python -m scripts.fetch_papers --log-level DEBUG --limit 10   # Debug mode, run outside of container
+python -m scripts.stage_2_fetch_papers --limit 100                                            # Interactive, run within container
+docker-compose exec api python -m scripts.stage_2_fetch_papers --retry-failed                 # Retry failures, run outside of container
+docker-compose exec api python -m scripts.stage_2_fetch_papers --log-level DEBUG --limit 10   # Debug mode, run outside of container
 
 # Large background fetch (>1K papers: run weekends or 9pm-5am ET weekdays)
 # Performance: ~0.6s/paper = 100 papers/min = 6K/hour
-docker-compose run --rm -d --name api-fetch api bash -c "python -m scripts.fetch_papers --limit 30000 --confirm-large-job"
-docker exec api-fetch tail -f logs/fetch_papers.log  # Monitor (use docker, not docker-compose)
+docker-compose run --rm -d --name api-fetch api bash -c "python -m scripts.stage_2_fetch_papers --limit 30000 --confirm-large-job"
+docker exec api-fetch tail -f logs/stage_2_fetch_papers.log  # Monitor (use docker, not docker-compose)
 
 # Stage 3: Chunk Documents
-python -m scripts.chunk_papers --limit 50                                  # Interactive, run within container
-docker-compose exec api python -m scripts.chunk_papers                     # Chunk all fetched documents
-docker-compose exec api python -m scripts.chunk_papers --rechunk-all       # Re-chunk everything (deletes existing chunks)
-docker-compose exec api python -m scripts.chunk_papers --log-level DEBUG   # Debug mode
+python -m scripts.stage_3_chunk_papers --limit 50                                  # Interactive, run within container
+docker-compose exec api python -m scripts.stage_3_chunk_papers                     # Chunk all fetched documents
+docker-compose exec api python -m scripts.stage_3_chunk_papers --rechunk-all       # Re-chunk everything (deletes existing chunks)
+docker-compose exec api python -m scripts.stage_3_chunk_papers --log-level DEBUG   # Debug mode
 
 # Stage 4: Embed Chunks (not yet implemented)
-# docker-compose exec api python -m scripts.embed_chunks --batch-size 1000
+# docker-compose exec api python -m scripts.stage_4_embed_chunks --batch-size 1000
 ```

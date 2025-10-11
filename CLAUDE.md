@@ -72,22 +72,28 @@ The project follows a phased development approach across three phases:
 
 This is a learning-focused AI engineering project optimized for hands-on experience with modern AI tools:
 
-1. **Hybrid Development**: Local development with Ollama, cloud demos with OpenAI GPT-4
-2. **Docker-First**: All services containerized for consistent development and deployment
-3. **Evaluation-Driven**: Use RAGAS and custom metrics for citation accuracy measurement (planned)
-4. **Cost-Conscious**: <$100 total project cost via local development + selective cloud demos
-5. **Phase-based Learning**: Master RAG fundamentals before advancing to agents and optimization
-6. **Documentation-First**: Always document design decisions before implementation (see `docs/`)
-7. **Slow and Steady**: Build understanding step-by-step, prioritize learning over speed
-8. **Professional Documentation**: No emojis in code files, documentation, or comments. Emojis are fine in conversational responses to the user.
-9. **No One-Off Scripts**: Avoid creating temporary Python scripts for debugging or database checks. Use bash commands with inline Python or docker-compose exec for ad-hoc operations.
-10. **Archive, Don't Delete**: When replacing or deprecating files, move them to `archive/` with a timestamp suffix (e.g., `old_script_20250108.py`) rather than deleting. This preserves project history for learning.
-11. **End-of-Session Workflow**: When the user asks to wrap up:
+1. **NEVER Write Large Code Files in One Go**: This is a learning project. Build incrementally:
+   - Discuss plan first, get approval
+   - Start with skeleton (imports, main, argparse)
+   - Add one function at a time with explanation
+   - Test each piece before proceeding
+   - If writing >50 lines in one message, STOP and break it down
+2. **Hybrid Development**: Local development with Ollama, cloud demos with OpenAI GPT-4
+3. **Docker-First**: All services containerized for consistent development and deployment
+4. **Evaluation-Driven**: Use RAGAS and custom metrics for citation accuracy measurement (planned)
+5. **Cost-Conscious**: <$100 total project cost via local development + selective cloud demos
+6. **Phase-based Learning**: Master RAG fundamentals before advancing to agents and optimization
+7. **Documentation-First**: Always document design decisions before implementation (see `docs/`)
+8. **Slow and Steady**: Build understanding step-by-step, prioritize learning over speed
+9. **Professional Documentation**: No emojis in code files, documentation, or comments. Emojis are fine in conversational responses to the user.
+10. **No One-Off Scripts**: Avoid creating temporary Python scripts for debugging or database checks. Use bash commands with inline Python or docker-compose exec for ad-hoc operations.
+11. **Archive, Don't Delete**: When replacing or deprecating files, move them to `archive/` with a timestamp suffix (e.g., `old_script_20250108.py`) rather than deleting. This preserves project history for learning.
+12. **End-of-Session Workflow**: When the user asks to wrap up:
     - Update `TODO.md` to mark completed tasks and add any new tasks discovered during the session
     - Review all code changes made during the session
     - Update all relevant design docs in `docs/` to reflect implementation changes
     - Create a git commit with a one-line message summarizing the session's work (no multi-line messages, no emoji, no co-author tags)
-12. **Update Docs at Session End Only**: Do NOT update design docs incrementally during implementation - only update them at the end of the session during wrap-up.
+13. **Update Docs at Session End Only**: Do NOT update design docs incrementally during implementation - only update them at the end of the session during wrap-up.
 
 ## Code Structure
 
@@ -106,10 +112,10 @@ app/
 └── main.py                 # FastAPI application
 
 scripts/
-├── collect_pmc_ids.py      # Stage 1: Search and store PMC IDs
-├── fetch_papers.py         # Stage 2: Fetch and store documents
-├── chunk_papers.py         # Stage 3: Chunk documents
-└── embed_chunks.py         # Stage 4: Embed chunks
+├── stage_1_collect_ids.py     # Stage 1: Search and store PMC IDs
+├── stage_2_fetch_papers.py    # Stage 2: Fetch and store documents
+├── stage_3_chunk_papers.py    # Stage 3: Chunk documents
+└── stage_4_embed_chunks.py    # Stage 4: Embed chunks
 
 docs/
 ├── project_spec.md         # Project specification and requirements

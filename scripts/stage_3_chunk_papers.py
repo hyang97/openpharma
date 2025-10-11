@@ -52,13 +52,13 @@ Examples:
     log_level = args.log_level or os.getenv("LOG_LEVEL", "INFO")
 
     # Archive old log if it exists
-    old_log = Path("logs/chunk_papers.log")
+    old_log = Path("logs/stage_3_chunk_papers.log")
     if old_log.exists():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        old_log.rename(f"logs/chunk_papers_{timestamp}.log")
+        old_log.rename(f"logs/stage_3_chunk_papers_{timestamp}.log")
 
     # Always log to the same active file
-    setup_logging(level=log_level, log_file="logs/chunk_papers.log")
+    setup_logging(level=log_level, log_file="logs/stage_3_chunk_papers.log")
 
     chunker = DocumentChunker(chunk_size=512, overlap=50)
 

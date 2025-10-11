@@ -60,13 +60,13 @@ IMPORTANT: NCBI requests large jobs (>1000 papers) run during off-peak hours:
 
     # Archive old log if it exists
     from pathlib import Path
-    old_log = Path("logs/fetch_papers.log")
+    old_log = Path("logs/stage_2_fetch_papers.log")
     if old_log.exists():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        old_log.rename(f"logs/fetch_papers_{timestamp}.log")
+        old_log.rename(f"logs/stage_2_fetch_papers_{timestamp}.log")
 
     # Always log to the same active file
-    setup_logging(level=log_level, log_file="logs/fetch_papers.log")
+    setup_logging(level=log_level, log_file="logs/stage_2_fetch_papers.log")
 
     # Use longer timeout when retrying failed papers (some failed due to size/timeout)
     timeout = 120 if args.retry_failed else 30
