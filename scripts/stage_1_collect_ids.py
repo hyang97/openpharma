@@ -61,13 +61,13 @@ For custom queries, always include 'open access[filter]' to ensure full-text ava
 
     # Archive old log if it exists
     from pathlib import Path
-    old_log = Path("logs/collect_pmc_ids.log")
+    old_log = Path("logs/stage_1_collect_ids.log")
     if old_log.exists():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        old_log.rename(f"logs/collect_pmc_ids_{timestamp}.log")
+        old_log.rename(f"logs/stage_1_collect_ids_{timestamp}.log")
 
     # Always log to the same active file
-    setup_logging(level="INFO", log_file="logs/collect_pmc_ids.log")
+    setup_logging(level="INFO", log_file="logs/stage_1_collect_ids.log")
 
     # Build query
     if args.query:

@@ -43,21 +43,20 @@ if failed_indices:
 ```python
 embedder = EmbeddingService()
 
-# Step 1: Create and submit batch file
-batch_file = embedder.create_batch_file(chunks, "data/batches/embed_123.jsonl")
-batch_id = embedder.submit_batch(batch_file)
+# Step 1: Submit batch (chunks must have document_chunk_id and embedding_text)
+batch_id = embedder.submit_batch_embed(chunks)
 print(f"Batch submitted: {batch_id}")
 
 # Step 2: Check status later (manual or in a separate job)
-status = embedder.get_batch_status(batch_id)
+status = embedder.get_batch_embed(batch_id)
 print(f"Status: {status['status']}")
-print(f"Progress: {status['completed_requests']}/{status['total_requests']}")
+print(f"Progress: {status['completed']}/{status['total']}")
 
-# Step 3: Download and parse results when completed
+# Step 3: Complete batch when ready (returns chunks with embeddings added)
 if status['status'] == 'completed':
-    chunks_with_embeddings = embedder.complete_batch(batch_id, chunks)
+    chunks_with_embeddings = embedder.get_batch_embed(batch_id, chunks)
     # Check for any failed chunks in the batch results
-    failed = [i for i, c in enumerate(chunks_with_embeddings) if c.get('embedding') is None]
+    failed = [c for c in chunks_with_embeddings if c.get('embedding') is None]
     if failed:
         print(f"Warning: {len(failed)} chunks in batch had errors")
 ```
@@ -72,7 +71,7 @@ if status['status'] == 'completed':
 **Cost:** 50% off regular pricing (~$0.01/1M tokens)
 **Time:** 2-24 hours (typically completes in a few hours)
 
-**Note:** Batch API requires chunks to have `source`, `source_id`, `chunk_index` fields for generating composite key IDs
+**Note:** Batch API requires chunks to have `document_chunk_id` and `embedding_text` fields
 
 ---
 
@@ -91,22 +90,20 @@ chunk = {
 }
 ```
 
-**Batch API** additionally requires these fields for generating deterministic IDs:
+**Batch API** additionally requires `document_chunk_id` field:
 
 ```python
 chunk = {
+    "document_chunk_id": 12345,    # Database primary key
     "content": "We studied 100 patients...",
     "section": "methods",
     "embedding_text": "Document: Diabetes Study\nSection: methods\n\nWe studied 100 patients...",
-    "source": "pubmed",           # Data source (e.g., "pubmed", "clinicaltrials")
-    "source_id": "PMC8234567",    # Source's unique ID for the document
-    "chunk_index": 0              # Sequential chunk number within document
 }
 ```
 
 The `embedding_text` is what gets sent to OpenAI (includes document title + section for better context).
 
-The composite key (`source_sourceid_chunkindex`) is used as the `custom_id` in batch requests, enabling idempotent operations and easier result matching.
+The `document_chunk_id` is used as the `custom_id` in batch requests (formatted as `chunk_{document_chunk_id}`), enabling result matching.
 
 ### Output
 
@@ -148,46 +145,36 @@ chunk = {
 ### Workflow
 
 ```
-1. Create & submit     →  2. Wait (hours)  →  3. Complete batch
-   create_batch_file()    get_batch_status()  complete_batch()
-   submit_batch()         (check progress)    (download & parse)
-   (returns batch_id)
+1. Submit batch        →  2. Wait (hours)      →  3. Complete batch
+   submit_batch_embed()    get_batch_embed()      get_batch_embed(batch_id, chunks)
+   (returns batch_id)      (check progress)       (download & add embeddings)
 ```
 
-### Primary Methods
+### Methods
 
-**`create_batch_file(chunks: List[Dict], output_path: str) -> str`**
-- Creates JSONL batch file for OpenAI Batch API
-- Uses composite key `{source}_{source_id}_{chunk_index}` as custom_id
-- Requires chunks to have: `embedding_text`, `source`, `source_id`, `chunk_index`
-- Returns path to created JSONL file
-
-**`submit_batch(batch_file_path: str) -> str`**
-- Uploads JSONL file to OpenAI and creates batch job
+**`submit_batch_embed(chunks: List[Dict], output_path: str = None) -> str`**
+- Creates JSONL batch file and submits to OpenAI Batch API
+- Requires chunks to have: `document_chunk_id`, `embedding_text`
+- Uses `chunk_{document_chunk_id}` as custom_id for result matching
+- Auto-generates output path as `data/batches/batch_{timestamp}.jsonl` if not specified
 - Returns batch_id for tracking
 
-**`get_batch_status(batch_id: str) -> Dict`**
-- Check current status of a submitted batch
-- Returns: `{status, total_requests, completed_requests, failed_requests}`
-- Status values: "validating", "in_progress", "finalizing", "completed", "failed"
+**`get_batch_embed(batch_id: str, chunks: List[Dict] = None) -> Union[Dict, List[Dict]]`**
+- **If chunks=None**: Returns status dict `{status, completed, total, failed}`
+  - Status values: "validating", "in_progress", "finalizing", "completed", "failed", "expired", "cancelling", "cancelled"
+- **If chunks provided and batch completed**: Downloads results, adds embeddings to chunks, returns chunks
+- **If chunks provided but incomplete**: Returns status dict (batch not ready)
 
-**`complete_batch(batch_id: str, chunks: List[Dict]) -> List[Dict]`**
-- Convenience method: downloads results and adds embeddings to chunks in one call
-- Validates batch is completed before downloading
-- Returns chunks with `embedding` field added (None for failed chunks)
+Example:
+```python
+# Check status
+status = embedder.get_batch_embed(batch_id)
+print(f"{status['completed']}/{status['total']} complete")
 
-### Advanced Methods
-
-Most users only need the four methods above. These provide lower-level control if needed:
-
-**`download_batch_results(batch_id: str, output_path: str = None) -> str`**
-- Downloads results JSONL file from completed batch
-- Usually just use `complete_batch()` instead
-
-**`parse_batch_results(results_file_path: str, chunks: List[Dict]) -> List[Dict]`**
-- Matches embeddings back to chunks using composite key custom_id
-- Requires chunks to have 'source', 'source_id', 'chunk_index' fields
-- Usually just use `complete_batch()` instead
+# Complete when ready
+if status['status'] == 'completed':
+    chunks_with_embeddings = embedder.get_batch_embed(batch_id, chunks)
+```
 
 ### Files Created
 
@@ -195,14 +182,14 @@ Batch API creates these files (in `data/batches/`, gitignored):
 
 ```
 data/batches/
-├── embed_1696789012.jsonl          # Input requests with custom_id = source_sourceid_chunkindex
-└── embed_1696789012_results.jsonl  # Output embeddings matched by custom_id
+├── batch_1696789012.jsonl          # Input requests (auto-generated)
+└── results_batch_abc123.jsonl      # Output embeddings (downloaded on completion)
 ```
 
 **Example batch file entry:**
 ```json
 {
-  "custom_id": "pubmed_PMC8234567_0",
+  "custom_id": "chunk_12345",
   "method": "POST",
   "url": "/v1/embeddings",
   "body": {
@@ -253,35 +240,28 @@ Common errors:
 ### Batch API
 
 ```python
-# Submit batch
-batch_file = embedder.create_batch_file(chunks, "data/batches/embed_123.jsonl")
-batch_id = embedder.submit_batch(batch_file)
+# Submit batch (chunks must have document_chunk_id and embedding_text)
+batch_id = embedder.submit_batch_embed(chunks)
 
-# Later, check and complete
-try:
-    chunks_with_embeddings = embedder.complete_batch(batch_id, chunks)
+# Later, check status
+status = embedder.get_batch_embed(batch_id)
+print(f"Status: {status['status']}, Progress: {status['completed']}/{status['total']}")
+
+# Complete when ready
+if status['status'] == 'completed':
+    chunks_with_embeddings = embedder.get_batch_embed(batch_id, chunks)
 
     # Check for failures in results
-    failed = [i for i, c in enumerate(chunks_with_embeddings) if c.get('embedding') is None]
+    failed = [c for c in chunks_with_embeddings if c.get('embedding') is None]
     if failed:
         print(f"{len(failed)} chunks failed in batch")
-
-except ValueError as e:
-    # Batch not completed yet
-    logger.warning(f"Batch not ready: {e}")
-    # Check again later
-
-except RuntimeError as e:
-    # Batch failed or was cancelled
-    logger.error(f"Batch error: {e}")
 ```
 
 **Recovering from batch failures:**
 
 If batch fails:
-1. Check status: `embedder.get_batch_status(batch_id)`
-2. If status is "failed", check `status_info.get('errors')`
-3. Re-submit as new batch using `create_batch_file()` and `submit_batch()`
+1. Check status: `status = embedder.get_batch_embed(batch_id)`
+2. If status is "failed", re-submit as new batch: `new_batch_id = embedder.submit_batch_embed(chunks)`
 
 ---
 
@@ -315,10 +295,10 @@ If batch fails:
 
 ### Tips:
 1. **Always validate chunks have `embedding_text` before calling**
-2. **Save batch_id** - you'll need it to retrieve results later
-3. **Don't delete batch files** - may need them for debugging
-4. **Use `complete_batch()`** - it's easier than manually downloading and parsing
-5. **Check status before completing** - avoid errors by checking batch is "completed" first
+2. **For Batch API, include `document_chunk_id`** - required for result matching
+3. **Save batch_id** - you'll need it to retrieve results later
+4. **Don't delete batch files** - may need them for debugging
+5. **Check status before completing** - call `get_batch_embed(batch_id)` first to verify "completed" status
 
 ---
 
@@ -391,14 +371,13 @@ if failed_indices:
         if retry_emb is not None:
             all_chunks[fail_idx]["embedding"] = retry_emb
 
-# Option 2: Batch API (async, cheaper)
-# batch_file = embedder.create_batch_file(all_chunks, "data/batches/embed_123.jsonl")
-# batch_id = embedder.submit_batch(batch_file)
+# Option 2: Batch API (async, cheaper, requires document_chunk_id field)
+# batch_id = embedder.submit_batch_embed(all_chunks)
 # print(f"Submitted batch: {batch_id}")
 # # Come back later (hours/overnight)...
-# status = embedder.get_batch_status(batch_id)
+# status = embedder.get_batch_embed(batch_id)
 # if status['status'] == 'completed':
-#     chunks_with_embeddings = embedder.complete_batch(batch_id, all_chunks)
+#     chunks_with_embeddings = embedder.get_batch_embed(batch_id, all_chunks)
 
 # Now chunks have embeddings - ready to store in database!
 ```

@@ -100,7 +100,8 @@ Last updated: 2025-10-10
 - [x] Update `docs/cheatsheet.md` with Stage 3 commands
 - [x] Update `docs/logging.md` with "log outcomes not attempts" best practice
 - [x] Add database connection details to CLAUDE.md (postgres service, openpharma db, admin user)
-- [ ] Consider renaming scripts with stage prefixes (stage1_*, stage2_*, stage3_*)
+- [x] Rename scripts with stage prefixes (stage_1_*, stage_2_*, stage_3_*, stage_4_*)
+- [x] Update docs/cheatsheet.md with new script names
 
 ### Cleanup
 - [x] Move `docs/archive` to project-level `archive/`
