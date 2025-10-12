@@ -62,31 +62,26 @@ Last updated: 2025-10-10
 - [x] Complete chunking of all fetched documents (52,014/52,014 chunked, 100% complete)
 
 ### Stage 4: Embed Chunks
-- [ ] Create `scripts/embed_chunks.py`
-  - Query `document_chunks` WHERE `embedding IS NULL`
-  - Use existing `EmbeddingService.embed_chunks()` for Regular API
-  - Update chunks with embeddings
-  - When all chunks for a document are embedded, set `ingestion_status='embedded'`
-  - Support --batch-size argument
-  - Log costs (already implemented in EmbeddingService)
-
-### Stage 4 (Batch API - Optional)
-- [ ] Add `--use-batch-api` flag to `scripts/embed_chunks.py`
-  - Call `EmbeddingService.submit_batch_embed()`
-  - Save batch_id to file
-  - Exit (don't wait for completion)
-- [ ] Create `scripts/complete_batch_embed.py`
-  - Load batch_id from file
-  - Call `EmbeddingService.get_batch_embed(batch_id, chunks)`
-  - Update chunks with embeddings
-  - Update document `ingestion_status='embedded'`
+- [x] Create `scripts/stage_4_embed_chunks.py`
+  - Regular API mode: Process documents with ingestion_status='chunked'
+  - Batch API mode: Submit batches (50K chunks or 3M tokens per batch)
+  - Get-batch mode: Retrieve results (stub, not yet implemented)
+  - Cost calculation and budget checking
+  - Support --mode, --limit, --budget, --model, --log-level arguments
+- [x] Add `OpenAIBatch` model to track batch jobs
+  - Fields: openai_batch_id (PK), status, submitted_at, completed_at, doc_count, chunk_count, token_count, input_file, output_file, error_message
+- [x] Add `openai_batch_id` field to Document model for batch tracking
+- [x] Update EmbeddingService.embed_chunks() to return (embeddings, cost) tuple
+- [ ] Implement get-batch mode to retrieve and apply batch results
+- [ ] Run Stage 4 regular API on full dataset (50K docs, ~$14.34 cost)
 
 ### Testing
 - [x] Test Stage 1: Collect 100 PMC IDs (52K available)
 - [x] Test Stage 2: Fetch papers (52,014 papers fetched successfully)
 - [x] Test Stage 3: Chunk papers (52,014 documents chunked into 1.89M chunks, avg 36 chunks/doc)
 - [x] Data quality validation (verified text extraction, section distribution, journal quality)
-- [ ] Test Stage 4: Embed chunks (Regular API)
+- [x] Test Stage 4 implementation (tested batch API, encountered 3M token queue limit)
+- [ ] Test Stage 4: Embed chunks with regular API (50K docs ready, $14.34 cost)
 - [ ] Test full pipeline end-to-end
 - [ ] Test re-fetching (UPSERT behavior)
 - [ ] Test re-chunking (delete old chunks)
@@ -156,5 +151,7 @@ Last updated: 2025-10-10
 - NCBI rate limiting: Conservative 0.15s between calls with API key (~100 papers/minute actual performance)
 - Large jobs (>1000 papers) must complete within off-peak hours (weekends or 9pm-5am ET weekdays)
 - Background jobs use nohup inside container with --confirm-large-job flag
-- Stage 1-3 complete: 52K papers collected, fetched, and chunked into 1.89M chunks (736M tokens)
-- Estimated embedding cost: $14.73 regular API, $7.36 batch API (text-embedding-3-small)
+- Stage 1-3 complete: 52K papers collected, fetched, and chunked into 1.89M chunks (717M tokens)
+- Embedding cost: $14.34 regular API vs $7.17 batch API (text-embedding-3-small)
+- **Batch API impractical**: 3M token queue limit requires 240 sequential batches (8 months)
+- **Recommendation**: Use regular API for $7 premium to complete in 12-15 hours vs months

@@ -45,7 +45,7 @@ class DocumentChunker:
 
         Returns:
             List of chunk dicts with keys: content, section, chunk_index,
-            char_start, char_end, token_count, embedding_text
+            char_start, char_end, token_count
         """
         if not text or not text.strip():
             return []
@@ -72,18 +72,13 @@ class DocumentChunker:
             abs_char_start = section_char_start + char_start_in_section
             abs_char_end = section_char_start + char_end_in_section
 
-            # Create embedding text with context (title + section + content)
-            # This is what gets embedded, not the content alone
-            embedding_text = f"Document: {doc_title}\nSection: {section}\n\n{chunk_text}"
-
             chunks.append({
                 "content": chunk_text,
                 "section": section,
                 "chunk_index": chunk_index,
                 "char_start": abs_char_start,
                 "char_end": abs_char_end,
-                "token_count": len(chunk_tokens),
-                "embedding_text": embedding_text  # Used for embedding, not stored in DB
+                "token_count": len(chunk_tokens)
             })
 
             chunk_index += 1
