@@ -75,6 +75,20 @@ docker-compose exec api python -m scripts.stage_3_chunk_papers                  
 docker-compose exec api python -m scripts.stage_3_chunk_papers --rechunk-all       # Re-chunk everything (deletes existing chunks)
 docker-compose exec api python -m scripts.stage_3_chunk_papers --log-level DEBUG   # Debug mode
 
-# Stage 4: Embed Chunks (not yet implemented)
-# docker-compose exec api python -m scripts.stage_4_embed_chunks --batch-size 1000
+# Stage 4: Embed Chunks
+
+## Regular API (instant results, full price)
+python -m scripts.stage_4_embed_chunks --mode regular --limit 10                                 # Test with 10 documents (interactive)
+docker-compose exec api python -m scripts.stage_4_embed_chunks --mode regular --limit 100        # Regular API: 100 docs
+docker-compose exec api python -m scripts.stage_4_embed_chunks --budget 1.0 --limit 500          # Set budget limit ($1.00)
+docker-compose exec api python -m scripts.stage_4_embed_chunks --log-level DEBUG --limit 1       # Debug mode
+
+## Batch API (50% cheaper, 24-hour turnaround)
+# Submit batches (auto-splits into 3K doc batches, marks docs as 'batch_submitted')
+docker-compose exec api python -m scripts.stage_4_embed_chunks --mode submit-batch --limit 2000 --budget 0.5
+docker-compose exec api python -m scripts.stage_4_embed_chunks --mode submit-batch --budget 50.0  # All chunked docs
+
+# Check status / retrieve results (24 hours later) - not yet implemented
+docker-compose exec api python -m scripts.stage_4_embed_chunks --mode get-batch --batch-id batch_abc123
+docker-compose exec api python -m scripts.stage_4_embed_chunks --mode get-batch --batch-file data/stage_4_batches/batch_metadata_20251012_010000.jsonl
 ```

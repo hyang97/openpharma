@@ -166,7 +166,7 @@ Examples:
     avg_chunks = total_chunks_created / success_count if success_count > 0 else 0
     logger.info(f"\nBatch complete: {success_count} successful, {fail_count} failed")
     logger.info(f"Total chunks created: {total_chunks_created} ({avg_chunks:.1f} avg per document)")
-    logger.info(f"Remaining documents to chunk: {total_docs - batch_size}")
+    logger.info(f"Remaining documents to chunk: {total_docs - success_count}")
 
 
 if __name__ == "__main__":

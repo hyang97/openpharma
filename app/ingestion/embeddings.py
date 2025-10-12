@@ -47,7 +47,7 @@ class EmbeddingService:
         total_batches = (len(texts) + batch_size - 1) // batch_size
         total_tokens = 0
 
-        logger.info(f"Embedding {len(texts)} texts in {total_batches} batches")
+        logger.debug(f"Embedding {len(texts)} texts in {total_batches} batches")
 
         for batch_num in range(total_batches):
             start_idx = batch_num * batch_size
@@ -64,17 +64,17 @@ class EmbeddingService:
                 all_embeddings.extend([None] * len(batch))
 
             if batch_num < total_batches - 1:
-                time.sleep(0.1)
+                time.sleep(0.05)
 
         successful = sum(1 for emb in all_embeddings if emb is not None)
 
         # Calculate cost based on model pricing
         cost = (total_tokens / 1_000_000) * self.price_per_million
 
-        logger.info(f"Generated {successful}/{len(all_embeddings)} embeddings")
+        logger.debug(f"Generated {successful}/{len(all_embeddings)} embeddings")
         logger.info(f"Model: {self.model} | Tokens: {total_tokens:,} | Cost: ${cost:.4f}")
 
-        return all_embeddings
+        return all_embeddings, cost
 
     # ============================================================================
     # BATCH API (async, 50% cheaper)

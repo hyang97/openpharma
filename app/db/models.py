@@ -22,12 +22,14 @@ title             TEXT          NOT NULL
 abstract          TEXT
 full_text         TEXT                             Concatenated sections with headers
 doc_metadata      JSONB                            Authors, journal, section_offsets, etc.
-ingestion_status  VARCHAR       DEFAULT 'fetched'  'fetched' | 'chunked' | 'embedded'
+ingestion_status  VARCHAR       DEFAULT 'fetched'  'fetched' | 'chunked' | 'batch_submitted' | 'embedded'
+openai_batch_id   VARCHAR                          Reference to batch job (nullable)
 created_at        TIMESTAMP     DEFAULT NOW()
 updated_at        TIMESTAMP
 
 UNIQUE: (source, source_id)
 INDEX:  idx_documents_ingestion_status ON ingestion_status
+INDEX:  idx_documents_openai_batch_id ON openai_batch_id
 
 
 TABLE: document_chunks - Chunked content with vector embeddings
@@ -46,6 +48,22 @@ created_at         TIMESTAMP     DEFAULT NOW()
 INDEX: idx_chunks_document ON document_id
 INDEX: idx_chunks_embedding ON embedding USING hnsw (m=16, ef_construction=64)
 INDEX: idx_chunks_needs_embedding ON document_chunk_id WHERE embedding IS NULL
+
+
+TABLE: openai_batches - Tracks OpenAI Batch API embedding jobs
+-------------------------------------------------------------------------------
+openai_batch_id    VARCHAR       PRIMARY KEY        OpenAI batch ID (e.g., "batch_abc123")
+status             VARCHAR       DEFAULT 'submitted' 'submitted' | 'validating' | 'in_progress' | etc.
+submitted_at       TIMESTAMP     DEFAULT NOW()
+completed_at       TIMESTAMP                        When batch finished
+doc_count          INTEGER                          Number of documents in batch
+chunk_count        INTEGER                          Number of chunks/requests in batch
+token_count        BIGINT                           Total tokens in batch
+input_file         VARCHAR                          Path to input JSONL file
+output_file        VARCHAR                          Path to output JSONL file
+error_message      TEXT                             Error details if failed
+
+INDEX: idx_openai_batches_status ON status
 """
 from sqlalchemy import Column, Integer, String, Text, DateTime, func, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import JSONB
@@ -99,7 +117,8 @@ class Document(Base):
 
     # Ingestion pipeline status tracking
     # Used by Stage 3 (chunking) and Stage 4 (embedding)
-    ingestion_status = Column(String, default='fetched', nullable=False)  # 'fetched', 'chunked', 'embedded'
+    ingestion_status = Column(String, default='fetched', nullable=False)  # 'fetched', 'chunked', 'batch_submitted', 'embedded'
+    openai_batch_id = Column(String)  # Reference to OpenAI Batch API job (nullable)
 
     # Timestamps
     # created_at: When document row was first inserted
@@ -159,3 +178,38 @@ class DocumentChunk(Base):
 
     def __repr__(self):
         return f"<DocumentChunk(id={self.document_chunk_id}, doc_id={self.document_id}, section={self.section})>"
+
+
+class OpenAIBatch(Base):
+    """Tracks OpenAI Batch API embedding jobs for monitoring and recovery."""
+    __tablename__ = "openai_batches"
+
+    # Primary key (OpenAI batch ID)
+    openai_batch_id = Column(String, primary_key=True)
+
+    # Batch status
+    status = Column(String, default='submitted', nullable=False)
+
+    # Timestamps
+    submitted_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at = Column(DateTime(timezone=True))
+
+    # Batch statistics
+    doc_count = Column(Integer)
+    chunk_count = Column(Integer)
+    token_count = Column(Integer)
+
+    # File paths
+    input_file = Column(String)
+    output_file = Column(String)
+
+    # Error tracking
+    error_message = Column(Text)
+
+    # Indexes
+    __table_args__ = (
+        Index('idx_openai_batches_status', 'status'),
+    )
+
+    def __repr__(self):
+        return f"<OpenAIBatch(id={self.openai_batch_id}, status={self.status}, chunks={self.chunk_count})>"

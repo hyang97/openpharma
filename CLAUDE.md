@@ -88,12 +88,16 @@ This is a learning-focused AI engineering project optimized for hands-on experie
 9. **Professional Documentation**: No emojis in code files, documentation, or comments. Emojis are fine in conversational responses to the user.
 10. **No One-Off Scripts**: Avoid creating temporary Python scripts for debugging or database checks. Use bash commands with inline Python or docker-compose exec for ad-hoc operations.
 11. **Archive, Don't Delete**: When replacing or deprecating files, move them to `archive/` with a timestamp suffix (e.g., `old_script_20250108.py`) rather than deleting. This preserves project history for learning.
-12. **End-of-Session Workflow**: When the user asks to wrap up:
+12. **Manual Coding Workflow**: When the user wants to code manually and learn:
+    - Provide explanations, answer questions, suggest approaches, give examples, and explain concepts as needed
+    - DO NOT write code unless explicitly asked
+    - Help debug and review user's code
+13. **End-of-Session Workflow**: When the user asks to wrap up:
     - Update `TODO.md` to mark completed tasks and add any new tasks discovered during the session
     - Review all code changes made during the session
     - Update all relevant design docs in `docs/` to reflect implementation changes
-    - Create a git commit with a one-line message summarizing the session's work (no multi-line messages, no emoji, no co-author tags)
-13. **Update Docs at Session End Only**: Do NOT update design docs incrementally during implementation - only update them at the end of the session during wrap-up.
+    - Create a git commit with a one-line message summarizing the session's work (NO multi-line messages)
+14. **Update Docs at Session End Only**: Do NOT update design docs incrementally during implementation - only update them at the end of the session during wrap-up.
 
 ## Code Structure
 
