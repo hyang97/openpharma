@@ -57,7 +57,7 @@ No schema changes needed. Existing `embedding` column already supports NULL.
 ```python
 class DocumentChunk(Base):
     # ... existing fields ...
-    embedding = Column(Vector(1536))  # NULL = needs embedding
+    embedding = Column(Vector(768))  # NULL = needs embedding (Ollama nomic-embed-text)
 ```
 
 ## Stage 1: Collect PMC IDs
@@ -183,7 +183,7 @@ python scripts/embed_chunks.py --use-batch-api --batch-size 10000
 5. Completion script: loads chunks, calls `get_batch_embed()`, updates embeddings
 
 ### Output
-- Chunks with `embedding` populated (Vector(1536))
+- Chunks with `embedding` populated (Vector(768) - Ollama nomic-embed-text)
 - Documents marked as `ingestion_status='embedded'`
 
 ### Idempotency

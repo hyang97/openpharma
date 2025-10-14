@@ -46,9 +46,9 @@ Streamlit (UI for testing)
     ↓
 FastAPI (REST API)
     ↓
-    ├→ OpenAI GPT-4 (LLM reasoning)
-    ├→ OpenAI text-embedding-3-large (semantic search)
-    └→ Cloud SQL: Postgres + pgvector (vector store)
+    ├→ Ollama Llama 3.1 8B / OpenAI GPT-4 (LLM reasoning - configurable)
+    ├→ Ollama nomic-embed-text (semantic search - 768d, self-hosted, $0 cost)
+    └→ Local Postgres + pgvector (vector store)
 
 Cloud Run Job (weekly data ingestion)
 Cloud Storage (raw data backup)
@@ -61,7 +61,7 @@ Cloud Monitoring (observability)
 | **API Backend** | FastAPI | Industry standard for ML APIs, async support |
 | **UI** | Streamlit | Rapid prototyping, all-in-one Python |
 | **LLM** | Ollama Llama 3.1 8B / OpenAI GPT-4 | Local development / Demo quality (configurable) |
-| **Embeddings** | OpenAI text-embedding-3-small | 1536 dims (HNSW compatible), cost-effective |
+| **Embeddings** | Ollama nomic-embed-text | 768 dims, self-hosted, $0 cost |
 | **Vector Store** | Local Postgres + pgvector | Simple, cost-effective, fully local development |
 | **Containerization** | Docker + Docker Compose | Local development, Cloud Run deployment |
 | **Deployment** | Local Docker / GCP Cloud Run | Local development / Cloud demos only |
@@ -96,17 +96,18 @@ Cloud Monitoring (observability)
 
 #### Technical Details
 - **Document Processing:** 512-token chunks with 50-token overlap, section-based organization
-- **Vector Embeddings:** 1536 dimensions (OpenAI text-embedding-3-small)
+- **Vector Embeddings:** 768 dimensions (Ollama nomic-embed-text)
+  - **CRITICAL:** MUST use Ollama 0.11.x (tested on 0.11.11). DO NOT upgrade to 0.12.5 (has regression bug causing EOF errors)
 - **Vector Index:** HNSW (m=16, ef_construction=64) for fast similarity search
 - **Database Schema:**
   - `documents` table: Metadata only (no document-level embeddings)
-  - `document_chunks` table: Chunked content with VECTOR(1536) embeddings
+  - `document_chunks` table: Chunked content with VECTOR(768) embeddings
   - UNIQUE(source, source_id) constraint for deduplication
   - JSONB columns for flexible source-specific metadata
 - **Retrieval:** Top-20 semantic nearest neighbors via cosine similarity
 - **Development Cost:** $0/month (local Ollama + local Postgres)
 - **Demo Cost:** $5-15/month (OpenAI GPT-4 calls when needed)
-- **Embedding Cost:** $5-10 one-time (text-embedding-3-small cheaper than 3-large)
+- **Embedding Cost:** $0 (self-hosted Ollama)
 - **GCP Credit Strategy:** Leverage free tiers (Cloud Run 2M requests, Cloud SQL shared-core)
 
 #### Non-Functional Requirements
@@ -118,7 +119,7 @@ Cloud Monitoring (observability)
 #### Hybrid Development Strategy
 - **Local Development:** Docker Compose (Postgres + FastAPI + Streamlit)
 - **LLM Flexibility:** Environment variable to switch Ollama ↔ OpenAI GPT-4
-- **Embeddings:** Always OpenAI (consistent vector dimensions)
+- **Embeddings:** Ollama nomic-embed-text (self-hosted, free, 768d)
 - **Cloud Deployment:** GCP Cloud Run for portfolio demos only
 - **Cost Optimization:** 95% development local ($0), 5% demos with GPT-4 ($5-15/month)
 
@@ -276,11 +277,12 @@ Cloud Storage (document store)
 - Simpler deployment, no external dependencies
 - Upgrade to dedicated vector DB only when scale demands it
 
-**text-embedding-3-small vs. 3-large:**
-- 1536 dims vs. 3072 dims
-- Compatible with HNSW (2000-dim limit) without quantization
-- 50% cost savings on embeddings
-- Negligible quality difference for domain-specific retrieval
+**Ollama nomic-embed-text (self-hosted):**
+- 768 dims (efficient, proven for semantic search)
+- Self-hosted via Ollama ($0 cost)
+- **CRITICAL:** Must use Ollama 0.11.x (0.12.5 has regression bug)
+- Fast inference (~36ms per embedding)
+- Better semantic clustering than OpenAI in benchmarks
 
 **Chunk-level search only (no document embeddings):**
 - Prevents context bloat (20-page paper → focused 512-token chunk)

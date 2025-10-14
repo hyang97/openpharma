@@ -88,7 +88,7 @@ Each phase stores persistent state and can be run independently. The original mo
 
 - Splits text into 512-token chunks with 50-token overlap
 - Chunks **each section separately** to preserve semantic boundaries
-- Uses tiktoken (OpenAI's tokenizer) for consistency with embeddings
+- Uses tiktoken tokenizer (cl100k_base encoding)
 - Tracks character offsets within original document
 
 **Example Chunk:**
@@ -105,12 +105,13 @@ Each phase stores persistent state and can be run independently. The original mo
 ```
 
 ### Stage 4: Embed (Embedding Service)
-**File:** `app/ingestion/embeddings.py` (to be created)
+**File:** `app/ingestion/embeddings.py`
 
-- Generates embeddings using OpenAI `text-embedding-3-small` (1536 dimensions)
+- Generates embeddings using Ollama `nomic-embed-text` (768 dimensions, self-hosted, $0 cost)
+- **CRITICAL**: Requires Ollama 0.11.x (NOT 0.12.5 - regression bug)
 - Embeds the **embedding_text** field (title + section + content), not just content
-- Processes in batches for efficiency
-- Embedding text format: `"Document: {title}\\nSection: {section}\\n\\n{content}"`
+- Processes sequentially to avoid overwhelming Ollama
+- Embedding text format: `"Doc: {title}\\nSection: {section}\\n\\n{content}"`
 
 ### Stage 5: Store (Database)
 **Tables:** `documents`, `document_chunks`
@@ -228,7 +229,7 @@ CREATE TABLE document_chunks (
   char_start INTEGER NOT NULL,                   -- Character offset in full_text
   char_end INTEGER NOT NULL,                     -- Character offset in full_text
   token_count INTEGER NOT NULL,                  -- Number of tokens (~512)
-  embedding VECTOR(1536),                        -- OpenAI embedding (NULL = needs embedding)
+  embedding VECTOR(768),                         -- Ollama nomic-embed-text embedding (NULL = needs embedding)
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -250,7 +251,7 @@ CREATE INDEX idx_chunks_needs_embedding ON document_chunks(document_chunk_id)
 | `char_start` | INTEGER | Character offset in parent `full_text` |
 | `char_end` | INTEGER | Character offset in parent `full_text` |
 | `token_count` | INTEGER | Number of tokens in chunk (~512) |
-| `embedding` | VECTOR(1536) | OpenAI embedding (NULL until Phase 4 completes) |
+| `embedding` | VECTOR(768) | Ollama nomic-embed-text embedding (NULL until Phase 4 completes) |
 | `created_at` | TIMESTAMP | When chunk was created |
 
 **Indexes:**
@@ -335,7 +336,7 @@ CREATE INDEX idx_chunks_needs_embedding ON document_chunks(document_chunk_id)
 
 - **Chunk size:** 512 tokens
 - **Overlap:** 50 tokens
-- **Tokenizer:** tiktoken `cl100k_base` (matches OpenAI embeddings)
+- **Tokenizer:** tiktoken `cl100k_base` encoding
 
 ### Section-Aware Chunking
 
@@ -450,8 +451,11 @@ chunks = chunker.chunk_document(paper)
 
 ### 4. Embed
 ```python
-for chunk in chunks:
-    chunk["embedding"] = openai.embed(chunk["embedding_text"])
+embedder = EmbeddingService()  # Uses Ollama
+texts = [chunk["embedding_text"] for chunk in chunks]
+embeddings, cost = embedder.embed_chunks(texts)
+for chunk, emb in zip(chunks, embeddings):
+    chunk["embedding"] = emb
 ```
 
 ### 5. Store
@@ -553,10 +557,10 @@ If we want to experiment with different chunk sizes/overlaps:
 4. Delete old chunks, insert new ones
 
 ### Optimization Opportunities
-- Batch embedding API calls (OpenAI supports up to 100 inputs)
 - Cache embeddings to avoid re-computing
 - Add materialized views for common queries
 - Consider parallel ingestion for large datasets
+- Batch database inserts for better performance
 
 ---
 
@@ -565,4 +569,5 @@ If we want to experiment with different chunk sizes/overlaps:
 - **JATS XML Spec:** https://jats.nlm.nih.gov/
 - **PubMed Central API:** https://www.ncbi.nlm.nih.gov/pmc/tools/developers/
 - **pgvector Documentation:** https://github.com/pgvector/pgvector
-- **OpenAI Embeddings:** https://platform.openai.com/docs/guides/embeddings
+- **Ollama Documentation:** https://ollama.com/
+- **nomic-embed-text Model:** https://ollama.com/library/nomic-embed-text
