@@ -158,10 +158,14 @@ class DocumentChunk(Base):
     char_end = Column(Integer, nullable=False)    # Character offset in full_text
     token_count = Column(Integer, nullable=False)  # Number of tokens (~512)
 
-    # Vector embedding (1536 dimensions for OpenAI text-embedding-3-small)
+    # Vector embeddings
+    # Old OpenAI embeddings (backup, will be dropped after migration validated)
+    openai_embedding = Column(Vector(1536))
+
+    # New Ollama embeddings (768 dimensions for nomic-embed-text)
     # NULL = embedding needs to be generated
     # Embedding is created from: "Document: {title}\nSection: {section}\n\n{content}"
-    embedding = Column(Vector(1536))
+    embedding = Column(Vector(768))
 
     # Timestamps
     # created_at: When chunk row was inserted (independent of embedding status)

@@ -1,5 +1,25 @@
 # OpenPharma Command Cheatsheet
 
+## CRITICAL: Ollama Version Requirements
+
+**MUST use Ollama 0.11.x (tested on 0.11.11)**
+- DO NOT upgrade to 0.12.5 - has regression bug causing EOF errors
+- Download 0.11.11: https://github.com/ollama/ollama/releases/tag/v0.3.11
+- Disable auto-updates in Ollama app (Preferences → Disable "Check for updates")
+- Verify version: `ollama --version` (should show 0.11.11)
+
+**Symptom of 0.12.5 bug:**
+```
+{"error":"do embedding request: Post \"http://127.0.0.1:XXXXX/embedding\": EOF"}
+```
+
+**If you hit this bug:**
+1. Quit Ollama app
+2. Delete `/Applications/Ollama.app`
+3. Download and install 0.11.11 from link above
+4. `ollama pull nomic-embed-text`
+5. Verify embeddings work: `curl -X POST http://localhost:11434/api/embeddings -d '{"model": "nomic-embed-text", "prompt": "test"}'`
+
 ## Container Management
 ```bash
 docker-compose up -d              # Start containers (background)
@@ -43,8 +63,20 @@ SELECT fetch_status, COUNT(*) FROM pubmed_papers GROUP BY fetch_status;
 -- Documents by ingestion status
 SELECT ingestion_status, COUNT(*) FROM documents GROUP BY ingestion_status;
 
--- Chunks needing embeddings
+-- Chunks needing embeddings (Ollama)
 SELECT COUNT(*) FROM document_chunks WHERE embedding IS NULL;
+
+-- Chunks with old OpenAI embeddings (backup)
+SELECT COUNT(*) FROM document_chunks WHERE openai_embedding IS NOT NULL;
+```
+
+**Backup and restore:**
+```bash
+# Backup documents table only (recommended before migration)
+docker-compose exec -T postgres pg_dump -U admin -d openpharma -t documents > backup_documents_$(date +%Y%m%d).sql
+
+# Restore from backup
+docker-compose exec -T postgres psql -U admin -d openpharma < backup_documents_20251012.sql
 ```
 
 **Reinitialize database (inside api container - drops all data):**
@@ -75,20 +107,22 @@ docker-compose exec api python -m scripts.stage_3_chunk_papers                  
 docker-compose exec api python -m scripts.stage_3_chunk_papers --rechunk-all       # Re-chunk everything (deletes existing chunks)
 docker-compose exec api python -m scripts.stage_3_chunk_papers --log-level DEBUG   # Debug mode
 
-# Stage 4: Embed Chunks
+# Stage 4: Embed Chunks (Ollama - free, instant, 768d)
 
-## Regular API (instant results, full price)
-python -m scripts.stage_4_embed_chunks --mode regular --limit 10                                 # Test with 10 documents (interactive)
-docker-compose exec api python -m scripts.stage_4_embed_chunks --mode regular --limit 100        # Regular API: 100 docs
-docker-compose exec api python -m scripts.stage_4_embed_chunks --budget 1.0 --limit 500          # Set budget limit ($1.00)
-docker-compose exec api python -m scripts.stage_4_embed_chunks --log-level DEBUG --limit 1       # Debug mode
+# Test with small batch
+python -m scripts.stage_4_embed_chunks --limit 10                                               # Test with 10 documents (interactive)
+docker-compose exec api python -m scripts.stage_4_embed_chunks --limit 100                      # 100 docs from outside container
+docker-compose exec api python -m scripts.stage_4_embed_chunks --log-level DEBUG --limit 1      # Debug mode
 
-## Batch API (50% cheaper, 24-hour turnaround)
-# Submit batches (auto-splits into 3K doc batches, marks docs as 'batch_submitted')
-docker-compose exec api python -m scripts.stage_4_embed_chunks --mode submit-batch --limit 2000 --budget 0.5
-docker-compose exec api python -m scripts.stage_4_embed_chunks --mode submit-batch --budget 50.0  # All chunked docs
+# Full embedding job (free, ~18 hours for 52K docs)
+# Estimate: 1.89M chunks × 36ms = ~19 hours total
+docker-compose run --rm -d --name api-embed api bash -c "python -m scripts.stage_4_embed_chunks"
+docker exec api-embed tail -f logs/stage_4_embed_chunks.log  # Monitor (use docker, not docker-compose)
 
-# Check status / retrieve results (24 hours later) - not yet implemented
-docker-compose exec api python -m scripts.stage_4_embed_chunks --mode get-batch --batch-id batch_abc123
-docker-compose exec api python -m scripts.stage_4_embed_chunks --mode get-batch --batch-file data/stage_4_batches/batch_metadata_20251012_010000.jsonl
+# Reset documents to re-run embeddings (keeps chunks, clears embedding column)
+docker-compose exec postgres psql -U admin -d openpharma -c "UPDATE documents SET ingestion_status = 'chunked' WHERE ingestion_status = 'embedded';"
+
+# DEPRECATED: OpenAI Batch API (no longer supported with Ollama)
+# docker-compose exec api python -m scripts.stage_4_embed_chunks --mode submit-batch
+# docker-compose exec api python -m scripts.stage_4_embed_chunks --mode get-batch --batch-id batch_abc123
 ```
