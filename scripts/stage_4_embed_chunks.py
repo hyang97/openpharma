@@ -1,8 +1,9 @@
 """
-Stage 4: Embed document chunks using OpenAI API.
+Stage 4: Embed document chunks using Ollama (primary) or OpenAI API (legacy).
 
 Processes documents with ingestion_status='chunked' and generates embeddings
-for all their chunks. Supports regular API (instant) and batch API (24h, 50% cheaper).
+for all their chunks. Primary method uses Ollama (free, instant, 768d).
+Legacy OpenAI batch API support preserved but deprecated.
 """
 import argparse
 import json
@@ -23,14 +24,254 @@ from app.logging_config import setup_logging
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+
+def batched(iterable, n):
+    """Batch an iterable into batches of size n. Available in Python 3.12+ i think?"""
+    batch = []
+    for item in iterable:
+        batch.append(item)
+        if len(batch) == n:
+            yield batch 
+            batch = []
+    if batch:
+        yield batch
+
+
+def embed_regular(args):
+    """Embed chunks using Ollama API (instant, free, 768d) with batched files"""
+
+    DOC_BATCH_SIZE = 50 # Process 50 documents at once
+
+    # Count total documents needing embedding
+    with Session(engine) as session:
+        total_docs = session.query(Document).filter(
+            Document.ingestion_status == 'chunked'
+        ).count()
+
+    if total_docs == 0:
+        logger.info("No documents need embedding")
+        return
+    logger.info(f"Found {total_docs} documents with status='chunked'")
+    
+    # Initialize embedding service
+    embedder = EmbeddingService(model=args.model)
+
+    # Track Progress
+    success_count = 0
+    fail_count = 0
+    failed_batch_count = 0
+    total_chunks_embedded = 0
+
+    # Fetch document IDs to process (ordered for consistency)
+    with Session(engine) as session:
+        stmt = select(Document.document_id, Document.title).where(Document.ingestion_status == 'chunked').order_by(Document.document_id)
+        if args.limit is not None:
+            stmt = stmt.limit(args.limit)
+        documents = session.execute(stmt).all()
+
+    logger.info(f"Processing {len(documents)} documents\n")
+
+    # Process documents in batches
+    total_batches = (len(documents) + DOC_BATCH_SIZE - 1) // DOC_BATCH_SIZE
+    for batch_idx, doc_batch in enumerate(batched(documents, DOC_BATCH_SIZE), 1):
+        try:
+            with Session(engine) as session:
+
+                # Collect chunks from all docs in batch and gather chunk record and embedding_texts
+                batch_chunks = []
+                batch_doc_ids = set()
+                for document_id, title in doc_batch:
+                    
+                    # Fetch all chunks for the document
+                    chunks = session.execute(
+                            select(DocumentChunk).where(DocumentChunk.document_id == document_id)
+                            ).scalars().all()
+                    
+                    # Check if chunks exist, warn and continue if not
+                    if not chunks:
+                        logger.warning(f"[Batch {batch_idx}/{total_batches}] No chunks found for {document_id}: {title}")
+                        fail_count += 1
+                        continue
+                    
+                    # Add chunks
+                    for chunk in chunks:
+                        embedding_text = f"Doc: {title}\nSection: {chunk.section}\n\n{chunk.content}"
+                        batch_chunks.append({
+                            'chunk_record': chunk,
+                            'document_id': document_id,
+                            'embedding_text': embedding_text
+                            })
+                    
+                    batch_doc_ids.add(document_id)
+                
+                # Embed all chunks in the batch at once 
+                logger.info(f"[Batch {batch_idx}/{total_batches}] Processing {len(batch_chunks)} chunks for {len(batch_doc_ids)} documents\n")
+                batch_embedding_texts = [item['embedding_text'] for item in batch_chunks]
+                embeddings, _ = embedder.embed_chunks(batch_embedding_texts)
+
+                # Check if chunks were embedded, warn and continue if not
+                if any(emb is None for emb in embeddings):
+                    logger.warning(f"Batch {batch_idx}/{total_batches}: Failed embeddings detected, skipping batch")
+                    failed_batch_count += 1
+                    continue
+
+                # Update all document chunks with embeddings
+                for chunk, emb in zip(batch_chunks, embeddings):
+                    chunk['chunk_record'].embedding = emb 
+                    total_chunks_embedded += 1
+
+                # Update documents as embedded
+                for doc_id in batch_doc_ids:
+                    session.execute(
+                        update(Document).where(Document.document_id == doc_id).values(ingestion_status='embedded')
+                    )
+                
+                session.commit()
+                success_count += len(batch_doc_ids)
+
+                logger.info(f"Batch {batch_idx}/{total_batches}: Embedded and updated {len(batch_chunks)} chunks from {len(batch_doc_ids)} docs")
+
+        except Exception as e:
+            logger.error(f"Batch {batch_idx}/{total_batches}: Error - {e}", exc_info=True)
+            failed_batch_count += 1
+    
+    # Final summary
+    avg_chunks = total_chunks_embedded / success_count if success_count > 0 else 0
+    logger.info(f"\n{'='*80}")
+    logger.info(f"Completed Ollama embedding:")
+    logger.info(f"  Documents: {success_count} successful, {fail_count} failed")
+    logger.info(f"  Chunks: {total_chunks_embedded:,} ({avg_chunks:.1f} avg/doc)")
+    logger.info(f"  Failed batches: {failed_batch_count}")
+    logger.info(f"  Remaining: {total_docs - success_count}")
+    logger.info(f"{'='*80}")
+
+
+def main():
+    """Embed document chunks using Ollama (primary) or OpenAI (legacy)."""
+    parser = argparse.ArgumentParser(
+        description="Embed document chunks using Ollama API (free, instant, 768d)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Ollama API (instant, free, default mode)
+  python -m scripts.stage_4_embed_chunks
+
+  # Ollama API with limit
+  python -m scripts.stage_4_embed_chunks --limit 100
+
+  # Legacy batch modes (deprecated, Ollama does not support batch API)
+  # python -m scripts.stage_4_embed_chunks --mode submit-batch
+  # python -m scripts.stage_4_embed_chunks --mode get-batch --batch-id batch_abc123
+        """
+    )
+
+    # Legacy OpenAI pricing (only used for deprecated batch modes)
+    MODEL_PRICING = {
+        "text-embedding-3-small": 0.02,
+        "text-embedding-3-large": 0.13,
+        "text-embedding-ada-002": 0.10,
+    }
+
+    # Embedding mode, options other than regular are not currently supported
+    parser.add_argument("--mode", type=str,
+                       choices=["regular", "submit-batch", "get-batch"],
+                       default="regular",
+                       help="Embedding mode (default: regular with Ollama)")
+
+    # Common options
+    parser.add_argument("--limit", type=int, default=None,
+                       help="Maximum number of documents to process (default: all)")
+    parser.add_argument("--model", type=str, default="nomic-embed-text",
+                       help="Ollama embedding model (default: nomic-embed-text)")
+    parser.add_argument("--log-level", type=str,
+                       choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+                       help="Logging level (default: LOG_LEVEL env var or INFO)")
+    
+    # Deprecated options
+    parser.add_argument("--budget", type=float, default=None,
+                       help="DEPRECATED: Not used with Ollama (always free)")
+    parser.add_argument("--batch-id", type=str,
+                       help="DEPRECATED: OpenAI batch ID (batch mode no longer supported)")
+    parser.add_argument("--batch-file", type=str,
+                       help="DEPRECATED: Batch file (batch mode no longer supported)")
+
+    args = parser.parse_args()
+
+    # Validate get-batch requires batch-id OR batch-file
+    if args.mode == "get-batch" and not (args.batch_id or args.batch_file):
+        parser.error("--batch-id or --batch-file is required when using --mode get-batch")
+
+    # Setup logging
+    log_level = args.log_level or os.getenv("LOG_LEVEL", "INFO")
+
+    # Archive old log if it exists
+    old_log = Path("logs/stage_4_embed_chunks.log")
+    if old_log.exists():
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        old_log.rename(f"logs/stage_4_embed_chunks_{timestamp}.log")
+
+    setup_logging(level=log_level, log_file="logs/stage_4_embed_chunks.log")
+
+    # DEPRECATED: Legacy OpenAI cost tracking (not executed for Ollama)
+    if False and args.mode in ["regular", "submit-batch"]:
+        with Session(engine) as session:
+            doc_stmt = select(Document.document_id).where(Document.ingestion_status == 'chunked').order_by(Document.document_id)
+            if args.limit is not None:
+                doc_stmt = doc_stmt.limit(args.limit)
+            doc_ids = session.execute(doc_stmt).scalars().all()
+
+            if doc_ids:
+                total_tokens = session.execute(
+                    select(func.sum(DocumentChunk.token_count)).where(DocumentChunk.document_id.in_(doc_ids))
+                ).scalar() or 0
+            else:
+                total_tokens = 0
+
+        logger.warning("=" * 80)
+        logger.warning("COST WARNING: This operation will use the OpenAI Embeddings API")
+
+        price_per_million = MODEL_PRICING.get(args.model, 0.02)
+        cost = (total_tokens / 1_000_000) * price_per_million
+
+        if args.mode == "regular":
+            logger.warning(f"Model: {args.model} @ ${price_per_million} / 1M toks | Tokens: {total_tokens:,} | Estimated Cost: ${cost:.4f}")
+        elif args.mode == "submit-batch":
+            cost /= 2
+            logger.warning(f"Model: {args.model} @ ${price_per_million/2} / 1M toks (50% discount with batch API) | Tokens: {total_tokens:,} | Estimated Cost: ${cost:.4f}")
+
+        # Check budget limit and return early if out of budget
+        if args.budget and cost > args.budget:
+            logger.error(f"Estimated cost ${cost:.4f} exceeds budget limit of ${args.budget:.2f}")
+            logger.error("Use --budget to increase the limit or --limit to process fewer documents")
+            return
+
+
+    # Route to appropriate function
+    if args.mode == "regular":
+        embed_regular(args)
+    elif args.mode == "submit-batch":
+        submit_batch(args)
+    elif args.mode == "get-batch":
+        get_batch(args)
+
+
+if __name__ == "__main__":
+    main()
+
+# ============================================================================
+# OpenAI Batch APIs (deprecated))
+# ============================================================================
+
+
 def count_tokens(text: str) -> int:
     """Count tokens in text."""
     encoding_name: str = "cl100k_base"  # OpenAI's tokenizer
     encoder = tiktoken.get_encoding(encoding_name)
     return len(encoder.encode(text))
 
-def embed_regular(args):
-    """Embed chunks using regular API (instant)."""
+def embed_regular_with_legacy_support(args):
+    """Embed chunks using Ollama API (instant, free, 768d) or OpenAI API (legacy)"""
+
     # Count total documents needing embedding
     with Session(engine) as session:
         total_docs = session.query(Document).filter(
@@ -118,11 +359,17 @@ def embed_regular(args):
     logger.info(f"Total cost: ${total_cost:.4f}")
     logger.info(f"Remaining documents to embed: {total_docs - success_count}")
 
-
-
 def submit_batch(args):
-    """Submit batch job to OpenAI Batch API."""
-    MAX_CHUNKS_PER_BATCH = 50000 
+    """
+    DEPRECATED: Submit batch job to OpenAI Batch API.
+    Ollama does not support batch API. Use embed_regular() instead.
+    """
+    logger.error("Batch API mode is deprecated. Ollama does not support batch operations.")
+    logger.error("Use --mode regular instead (Ollama is instant and free).")
+    return
+
+    # Legacy OpenAI batch code preserved below (unreachable)
+    MAX_CHUNKS_PER_BATCH = 50000
     MAX_TOKENS_PER_BATCH = 3_000_000
 
     # Count total documents needing embedding
@@ -265,137 +512,11 @@ def submit_batch(args):
     logger.info(f"Submitted {current_batch_idx} batches!")
     logger.info(f"{'='*80}")
 
-
 def get_batch(args):
-    """Get batch results and update database."""
-    # TODO: Initialize EmbeddingService
-    # TODO: Call embedder.get_batch_embed(args.batch_id) to check status
-    # TODO: If not completed, log status and return
-    # TODO: Log that batch is complete, downloading results
-
-    # TODO: Query for all chunks with embedding=NULL (candidates for this batch)
-    # TODO: Build chunk_data list with document_chunk_id and embedding_text
-    # TODO: Call embedder.get_batch_embed(args.batch_id, chunk_data) to download and parse
-
-    # TODO: Track success/fail counts
-    # TODO: For each chunk in returned chunk_data:
-    #   - If embedding exists, update chunk in database
-    #   - Track success/fail
-
-    # TODO: Update documents to 'embedded' if all their chunks have embeddings
-    # TODO: Use same UPDATE query as embed_regular
-    # TODO: Log final summary
-
-
-def main():
-    """Embed document chunks using OpenAI API."""
-    parser = argparse.ArgumentParser(
-        description="Embed document chunks using OpenAI API",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Regular API (instant, default mode)
-  python -m scripts.stage_4_embed_chunks
-
-  # Regular API with limit
-  python -m scripts.stage_4_embed_chunks --limit 100
-
-  # Batch API - submit (24-hour turnaround, 50%% cheaper)
-  python -m scripts.stage_4_embed_chunks --mode submit-batch --limit 1000
-
-  # Batch API - get results
-  python -m scripts.stage_4_embed_chunks --mode get-batch --batch-id batch_abc123
-        """
-    )
-
-    # Pricing per 1M tokens (as of 2025)
-    MODEL_PRICING = {
-        "text-embedding-3-small": 0.02,
-        "text-embedding-3-large": 0.13,
-        "text-embedding-ada-002": 0.10,
-    }
-
-    # Embedding mode
-    parser.add_argument("--mode", type=str,
-                       choices=["regular", "submit-batch", "get-batch"],
-                       default="regular",
-                       help="Embedding mode (default: regular)")
-
-    # Common options
-    parser.add_argument("--limit", type=int, default=None,
-                       help="Maximum number of documents to process (default: all)")
-    parser.add_argument("--budget", type=float, default=0.1,
-                       help="API budget in dollars (default: 0.1)")
-    parser.add_argument("--batch-id", type=str,
-                       help="Single OpenAI batch ID to check/retrieve")
-    parser.add_argument("--batch-file", type=str,
-                       help="JSONL file containing multiple batch IDs (from submit-batch)")
-    parser.add_argument("--model", type=str, default="text-embedding-3-small",
-                       choices=["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"],
-                       help="OpenAI embedding model (default: text-embedding-3-small)")
-    parser.add_argument("--log-level", type=str,
-                       choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-                       help="Logging level (default: LOG_LEVEL env var or INFO)")
-
-    args = parser.parse_args()
-
-    # Validate get-batch requires batch-id OR batch-file
-    if args.mode == "get-batch" and not (args.batch_id or args.batch_file):
-        parser.error("--batch-id or --batch-file is required when using --mode get-batch")
-
-    # Setup logging
-    log_level = args.log_level or os.getenv("LOG_LEVEL", "INFO")
-
-    # Archive old log if it exists
-    old_log = Path("logs/stage_4_embed_chunks.log")
-    if old_log.exists():
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        old_log.rename(f"logs/stage_4_embed_chunks_{timestamp}.log")
-
-    setup_logging(level=log_level, log_file="logs/stage_4_embed_chunks.log")
-
-    # Cost warning for embedding modes
-    if args.mode in ["regular", "submit-batch"]:
-        with Session(engine) as session:
-            doc_stmt = select(Document.document_id).where(Document.ingestion_status == 'chunked').order_by(Document.document_id)
-            if args.limit is not None:
-                doc_stmt = doc_stmt.limit(args.limit)
-            doc_ids = session.execute(doc_stmt).scalars().all()
-
-            if doc_ids:
-                total_tokens = session.execute(
-                    select(func.sum(DocumentChunk.token_count)).where(DocumentChunk.document_id.in_(doc_ids))
-                ).scalar() or 0 
-            else:
-                total_tokens = 0
-
-        logger.warning("=" * 80)
-        logger.warning("COST WARNING: This operation will use the OpenAI Embeddings API")
-        
-        price_per_million = MODEL_PRICING.get(args.model, 0.02)
-        cost = (total_tokens / 1_000_000) * price_per_million
-
-        if args.mode == "regular":
-            logger.warning(f"Model: {args.model} @ ${price_per_million} / 1M toks | Tokens: {total_tokens:,} | Estimated Cost: ${cost:.4f}")
-        elif args.mode == "submit-batch":
-            cost /= 2
-            logger.warning(f"Model: {args.model} @ ${price_per_million/2} / 1M toks (50% discount with batch API) | Tokens: {total_tokens:,} | Estimated Cost: ${cost:.4f}")
-        
-        # Check budget limit and return early if out of budget
-        if cost > args.budget:
-            logger.error(f"Estimated cost ${cost:.4f} exceeds budget limit of ${args.budget:.2f}")
-            logger.error("Use --budget to increase the limit or --limit to process fewer documents")
-            return
-
-
-    # Route to appropriate function
-    if args.mode == "regular":
-        embed_regular(args)
-    elif args.mode == "submit-batch":
-        submit_batch(args)
-    elif args.mode == "get-batch":
-        get_batch(args)
-
-
-if __name__ == "__main__":
-    main()
+    """
+    DEPRECATED: Get batch results from OpenAI Batch API.
+    Ollama does not support batch API. Use embed_regular() instead.
+    """
+    logger.error("Batch API mode is deprecated. Ollama does not support batch operations.")
+    logger.error("Use --mode regular instead (Ollama is instant and free).")
+    return

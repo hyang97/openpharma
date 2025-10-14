@@ -36,6 +36,12 @@ The project follows a phased development approach across three phases:
 - **Index Type**: HNSW (m=16, ef_construction=64) for fast similarity search
 
 ### Infrastructure Choices
+- **Embeddings**: Ollama nomic-embed-text (768d, self-hosted, $0 cost)
+  - **CRITICAL**: MUST use Ollama version 0.11.x (tested on 0.11.11)
+  - **DO NOT upgrade to 0.12.5** - has regression bug causing EOF errors with concurrent requests
+  - Download 0.11.11 from: https://github.com/ollama/ollama/releases/tag/v0.3.11
+  - Disable auto-updates in Ollama app to prevent regression
+  - Symptom of bug: `{"error":"do embedding request: Post \"http://127.0.0.1:XXXXX/embedding\": EOF"}`
 - **Vector Store**: Local Postgres + pgvector (cost-effective for <1M documents)
 - **Database**: Service name `postgres`, database `openpharma`, user `admin` (use in docker-compose exec commands)
 - **Schema Design**:

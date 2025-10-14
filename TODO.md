@@ -1,8 +1,36 @@
 # OpenPharma TODO List
 
-Last updated: 2025-10-10
+Last updated: 2025-10-12
 
-## Current Sprint: Decoupled Ingestion Pipeline
+## Current Sprint: Ollama Embeddings (In Progress)
+
+### Migration to Self-Hosted Embeddings
+- [x] Update schema: `app/db/models.py` line 164: `Vector(1536)` → `Vector(768)`
+- [x] Drop and recreate document_chunks table (inside api container)
+- [x] Update `app/ingestion/embeddings.py` to use Ollama API instead of OpenAI
+- [x] Update `scripts/stage_4_embed_chunks.py` to use Ollama (remove batch mode)
+- [x] Re-chunk all documents: `docker-compose exec api python -m scripts.stage_3_chunk_papers`
+- [ ] Re-embed all chunks with Ollama (~18 hours): `docker-compose run --rm -d --name api-embed api bash -c "python -m scripts.stage_4_embed_chunks"`
+- [ ] Update `tests/validate_embeddings.py` to use Ollama for queries
+- [ ] Validate results with semantic quality tests
+
+**Why switching:**
+- 11x faster query embeddings (36ms vs 402ms)
+- $0 per query (vs $0.00001)
+- Better semantic clustering in tests
+- 7x faster end-to-end RAG (60ms vs 426ms)
+
+**CRITICAL: Ollama Version Requirement**
+- **MUST use Ollama 0.11.x** (tested on 0.11.11)
+- **DO NOT upgrade to 0.12.5** - has regression bug causing EOF errors on concurrent embedding requests
+- Symptoms: `{"error":"do embedding request: Post \"http://127.0.0.1:XXXXX/embedding\": EOF"}`
+- Root cause: Version 0.12.5 cannot handle rapid sequential embedding requests (crashes runner processes)
+- Solution: Downgrade to 0.11.11 from https://github.com/ollama/ollama/releases/tag/v0.3.11
+- Disable auto-updates for Ollama app to prevent regression
+
+---
+
+## Completed Sprint: Decoupled Ingestion Pipeline
 
 ### Schema Changes
 - [x] Add `PubMedPaper` model to `app/db/models.py`

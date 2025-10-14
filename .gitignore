@@ -69,3 +69,7 @@ models/
 
 # Batch API files
 data/batches/
+
+# Backups (large SQL dumps)
+backups/
+*.sql
