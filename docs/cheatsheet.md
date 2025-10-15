@@ -107,22 +107,32 @@ docker-compose exec api python -m scripts.stage_3_chunk_papers                  
 docker-compose exec api python -m scripts.stage_3_chunk_papers --rechunk-all       # Re-chunk everything (deletes existing chunks)
 docker-compose exec api python -m scripts.stage_3_chunk_papers --log-level DEBUG   # Debug mode
 
-# Stage 4: Embed Chunks (Ollama - free, instant, 768d)
+# Stage 4: Embed Chunks (Ollama - free, 768d)
 
 # Test with small batch
-python -m scripts.stage_4_embed_chunks --limit 10                                               # Test with 10 documents (interactive)
-docker-compose exec api python -m scripts.stage_4_embed_chunks --limit 100                      # 100 docs from outside container
-docker-compose exec api python -m scripts.stage_4_embed_chunks --log-level DEBUG --limit 1      # Debug mode
+python -m scripts.stage_4_embed_chunks --limit 10                      # Interactive test
+docker-compose exec api python -m scripts.stage_4_embed_chunks --limit 100 --log-level DEBUG
 
-# Full embedding job (free, ~18 hours for 52K docs)
-# Estimate: 1.89M chunks × 36ms = ~19 hours total
-docker-compose run --rm -d --name api-embed api bash -c "python -m scripts.stage_4_embed_chunks"
-docker exec api-embed tail -f logs/stage_4_embed_chunks.log  # Monitor (use docker, not docker-compose)
+# Long-running embedding job (~55 hours for 1.77M chunks at 111ms/chunk)
+# Option 1: Detached container (BEST - survives laptop sleep/close)
+docker-compose run --rm -d --name api-embed api bash -c "python -m scripts.stage_4_embed_chunks --workers 1"
+docker exec api-embed tail -f logs/stage_4_embed_chunks.log           # Monitor
+docker stop api-embed                                                  # Stop if needed
 
-# Reset documents to re-run embeddings (keeps chunks, clears embedding column)
-docker-compose exec postgres psql -U admin -d openpharma -c "UPDATE documents SET ingestion_status = 'chunked' WHERE ingestion_status = 'embedded';"
+# Option 2: Keep Mac awake (simpler but requires terminal open)
+caffeinate -i docker-compose exec api python -m scripts.stage_4_embed_chunks --workers 1
 
-# DEPRECATED: OpenAI Batch API (no longer supported with Ollama)
-# docker-compose exec api python -m scripts.stage_4_embed_chunks --mode submit-batch
-# docker-compose exec api python -m scripts.stage_4_embed_chunks --mode get-batch --batch-id batch_abc123
+# Check progress
+docker exec api-embed grep "Remaining" logs/stage_4_embed_chunks.log
+docker-compose exec postgres psql -U admin -d openpharma -c "SELECT COUNT(*) FROM documents WHERE ingestion_status='embedded';"
+
+# Resume after interruption (idempotent - only processes status='chunked')
+docker-compose run --rm -d --name api-embed api bash -c "python -m scripts.stage_4_embed_chunks --workers 1"
+```
+
+## Testing & Validation
+
+```bash
+docker-compose exec api python -m tests.test_data_integrity           # Database health
+docker-compose exec api python -m tests.test_retrieval_quality        # End-to-end RAG quality
 ```

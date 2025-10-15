@@ -66,79 +66,32 @@ class EmbeddingService:
             return [], 0.0
         
         all_embeddings = []
-        for text in texts:
-            try:
-                response = requests.post(
-                    f"{self.base_url}/api/embeddings",
-                    json={"model": self.model, "prompt": text},
-                    timeout=30
-                )
-                response.raise_for_status()
-                all_embeddings.append(response.json()["embedding"])
-                # logger.debug(f"successfully embedded {text[:100]}")
-                # time.sleep(0.1)
 
-            except requests.exceptions.HTTPError as e:
-                logger.error(f"Embedding HTTP error: {e}")
-                logger.error(f"Response status: {response.status_code}")
-                logger.error(f"Response body: {response.text}")  
-                logger.error(f"Failed embedding text: {text}")
-                all_embeddings.append(None)
-            except Exception as e:
-                logger.error(f"Embedding failed: {e}", exc_info=True)
-                all_embeddings.append(None)
-                
-        return all_embeddings, 0.0
-
-        # Sequential processing by default (safest for Ollama)
         if max_workers is None or max_workers == 1:
+            # Sequential processing (safest for Ollama)
             logger.debug(f"Embedding {len(texts)} texts using Ollama (sequential)")
-            all_embeddings = []
-            for i, text in enumerate(texts):
-                max_retries = 3
-                retry_count = 0
-                embedding = None
+            for text in texts:
+                try:
+                    response = requests.post(
+                        f"{self.base_url}/api/embeddings",
+                        json={"model": self.model, "prompt": text},
+                        timeout=30
+                    )
+                    response.raise_for_status()
+                    all_embeddings.append(response.json()["embedding"])
+                    # logger.debug(f"successfully embedded {text[:100]}")
+                    # time.sleep(0.1)
 
-                while retry_count < max_retries and embedding is None:
-                    try:
-                        response = requests.post(
-                            f"{self.base_url}/api/embeddings",
-                            json={"model": self.model, "prompt": text},
-                            timeout=30
-                        )
-                        response.raise_for_status()
-                        embedding = response.json()["embedding"]
-                        all_embeddings.append(embedding)
+                except requests.exceptions.HTTPError as e:
+                    logger.error(f"Embedding HTTP error: {e}")
+                    logger.error(f"Response status: {response.status_code}")
+                    logger.error(f"Response body: {response.text}")  
+                    logger.error(f"Failed embedding text: {text}")
+                    all_embeddings.append(None)
+                except Exception as e:
+                    logger.error(f"Embedding failed: {e}", exc_info=True)
+                    all_embeddings.append(None)
 
-                        # Add small delay to prevent overwhelming Ollama
-                        time.sleep(0.1)
-                        break  # Success, exit retry loop
-
-                    except requests.exceptions.HTTPError as e:
-                        retry_count += 1
-                        if retry_count == 1:  # Only log first failure
-                            logger.warning(f"Text {i+1}/{len(texts)} failed (attempt {retry_count}/{max_retries}): {e}")
-                            try:
-                                logger.debug(f"Response body: {response.text[:500]}")
-                            except:
-                                pass
-
-                        if retry_count < max_retries:
-                            time.sleep(0.5 * retry_count)  # Exponential backoff
-                        else:
-                            logger.error(f"Text {i+1}/{len(texts)} failed after {max_retries} attempts")
-                            all_embeddings.append(None)
-
-                    except Exception as e:
-                        retry_count += 1
-                        if retry_count == 1:
-                            logger.warning(f"Text {i+1}/{len(texts)} exception (attempt {retry_count}/{max_retries}): {e}")
-
-                        if retry_count < max_retries:
-                            time.sleep(0.5 * retry_count)
-                        else:
-                            logger.error(f"Text {i+1}/{len(texts)} failed after {max_retries} attempts: {e}")
-                            all_embeddings.append(None)
         else:
             # Parallel embedding with ThreadPoolExecutor
             import concurrent.futures
@@ -150,7 +103,7 @@ class EmbeddingService:
         successful = len(texts) - failed_count
 
         logger.info(f"Generated {successful}/{len(texts)} embeddings (768 dimensions, $0 cost)")
-
+                
         return all_embeddings, 0.0
 
     def embed_single(self, text: str) -> Optional[List[float]]:

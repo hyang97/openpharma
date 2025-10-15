@@ -14,27 +14,23 @@ from typing import List, Tuple
 from datetime import datetime
 
 from sqlalchemy import create_engine, text
-from openai import OpenAI
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.logging_config import setup_logging, get_logger
+from app.ingestion.embeddings import EmbeddingService
 
 # Setup logging
 setup_logging(level="INFO", log_file="logs/validate_embeddings.log")
 logger = get_logger(__name__)
 engine = create_engine(os.getenv("DATABASE_URL"))
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+embedder = EmbeddingService()
 
 
 def get_query_embedding(query_text: str) -> List[float]:
-    """Generate embedding for a query string."""
-    response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=query_text
-    )
-    return response.data[0].embedding
+    """Generate embedding for a query string using Ollama."""
+    return embedder.embed_single(query_text)
 
 
 def search_similar_chunks(query_embedding: List[float], limit: int = 5) -> List[Tuple]:
