@@ -9,6 +9,7 @@ import argparse
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
@@ -40,7 +41,8 @@ def batched(iterable, n):
 def embed_regular(args):
     """Embed chunks using Ollama API (instant, free, 768d) with batched files"""
 
-    DOC_BATCH_SIZE = 50 # Process 50 documents at once
+    DOC_BATCH_SIZE = 50  # Process 50 documents at once
+    NUM_WORKERS = args.workers  # Parallel workers from CLI
 
     # Count total documents needing embedding
     with Session(engine) as session:
@@ -73,6 +75,8 @@ def embed_regular(args):
 
     # Process documents in batches
     total_batches = (len(documents) + DOC_BATCH_SIZE - 1) // DOC_BATCH_SIZE
+    start_time = time.time()
+
     for batch_idx, doc_batch in enumerate(batched(documents, DOC_BATCH_SIZE), 1):
         try:
             with Session(engine) as session:
@@ -104,10 +108,13 @@ def embed_regular(args):
                     
                     batch_doc_ids.add(document_id)
                 
-                # Embed all chunks in the batch at once 
-                logger.info(f"[Batch {batch_idx}/{total_batches}] Processing {len(batch_chunks)} chunks for {len(batch_doc_ids)} documents\n")
+                # Embed all chunks in the batch at once
+                logger.info(f"[Batch {batch_idx}/{total_batches}] Processing {len(batch_chunks)} chunks for {len(batch_doc_ids)} documents")
                 batch_embedding_texts = [item['embedding_text'] for item in batch_chunks]
-                embeddings, _ = embedder.embed_chunks(batch_embedding_texts)
+
+                embed_start = time.time()
+                embeddings, _ = embedder.embed_chunks(batch_embedding_texts, NUM_WORKERS)
+                embed_time = time.time() - embed_start
 
                 # Check if chunks were embedded, warn and continue if not
                 if any(emb is None for emb in embeddings):
@@ -116,8 +123,9 @@ def embed_regular(args):
                     continue
 
                 # Update all document chunks with embeddings
+                db_start = time.time()
                 for chunk, emb in zip(batch_chunks, embeddings):
-                    chunk['chunk_record'].embedding = emb 
+                    chunk['chunk_record'].embedding = emb
                     total_chunks_embedded += 1
 
                 # Update documents as embedded
@@ -125,25 +133,33 @@ def embed_regular(args):
                     session.execute(
                         update(Document).where(Document.document_id == doc_id).values(ingestion_status='embedded')
                     )
-                
+
                 session.commit()
+                db_time = time.time() - db_start
                 success_count += len(batch_doc_ids)
 
-                logger.info(f"Batch {batch_idx}/{total_batches}: Embedded and updated {len(batch_chunks)} chunks from {len(batch_doc_ids)} docs")
+                avg_embed_ms = (embed_time / len(batch_chunks)) * 1000
+                logger.info(f"Batch {batch_idx}/{total_batches}: Embedded {len(batch_chunks)} chunks in {embed_time:.1f}s ({avg_embed_ms:.1f}ms/chunk), DB update {db_time:.1f}s\n\n")
 
         except Exception as e:
             logger.error(f"Batch {batch_idx}/{total_batches}: Error - {e}", exc_info=True)
             failed_batch_count += 1
     
     # Final summary
+    total_time = time.time() - start_time
     avg_chunks = total_chunks_embedded / success_count if success_count > 0 else 0
+    avg_time_per_chunk = (total_time / total_chunks_embedded) * 1000 if total_chunks_embedded > 0 else 0
+
     logger.info(f"\n{'='*80}")
     logger.info(f"Completed Ollama embedding:")
     logger.info(f"  Documents: {success_count} successful, {fail_count} failed")
     logger.info(f"  Chunks: {total_chunks_embedded:,} ({avg_chunks:.1f} avg/doc)")
+    logger.info(f"  Workers: {NUM_WORKERS}")
+    logger.info(f"  Total time: {total_time/60:.1f} minutes ({total_time:.0f}s)")
+    logger.info(f"  Avg time/chunk: {avg_time_per_chunk:.1f}ms")
     logger.info(f"  Failed batches: {failed_batch_count}")
-    logger.info(f"  Remaining: {total_docs - success_count}")
-    logger.info(f"{'='*80}")
+    logger.info(f"  Remaining docs: {total_docs - success_count}")
+    logger.info(f"\n{'='*80}")
 
 
 def main():
@@ -183,6 +199,8 @@ Examples:
                        help="Maximum number of documents to process (default: all)")
     parser.add_argument("--model", type=str, default="nomic-embed-text",
                        help="Ollama embedding model (default: nomic-embed-text)")
+    parser.add_argument("--workers", type=int, default=1,
+                       help="Number of parallel workers for embedding (default: 1 sequential, set to 8 if OLLAMA_NUM_PARALLEL=8)")
     parser.add_argument("--log-level", type=str,
                        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                        help="Logging level (default: LOG_LEVEL env var or INFO)")

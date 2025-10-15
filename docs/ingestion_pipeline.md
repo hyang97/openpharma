@@ -64,7 +64,7 @@ class DocumentChunk(Base):
 
 ### Script
 ```bash
-python scripts/collect_pmc_ids.py --max-results 100000
+python scripts/stage_1_collect_ids.py --limit 100000
 ```
 
 ### What it does
@@ -75,7 +75,7 @@ python scripts/collect_pmc_ids.py --max-results 100000
 
 ### For monthly updates
 ```bash
-python scripts/collect_pmc_ids.py --query "diabetes[Title/Abstract] AND 2025/02/01:2025/02/28[lr]"
+python scripts/stage_1_collect_ids.py --query "diabetes[Title/Abstract] AND 2025/02/01:2025/02/28[lr]"
 ```
 
 **PubMed date fields:**
@@ -94,10 +94,10 @@ Re-running same search skips PMC IDs already in table (ON CONFLICT DO NOTHING)
 ### Script
 ```bash
 # Interactive (small batches for testing)
-python scripts/fetch_papers.py --limit 100
+python scripts/stage_2_fetch_papers.py --limit 100
 
 # Background (large batches, requires --confirm-large-job to skip prompt)
-nohup python scripts/fetch_papers.py --limit 25000 --confirm-large-job > fetch_papers.log 2>&1 &
+nohup python scripts/stage_2_fetch_papers.py --limit 25000 --confirm-large-job > fetch_papers.log 2>&1 &
 ```
 
 ### What it does
@@ -132,7 +132,7 @@ When a paper is re-fetched (found via `[lr]` search):
 
 ### Script
 ```bash
-python scripts/chunk_papers.py --batch-size 50
+python scripts/stage_3_chunk_papers.py --limit 50
 ```
 
 ### What it does
@@ -158,29 +158,24 @@ When a document is updated, Stage 2 sets `ingestion_status='fetched'` again, tri
 
 ### Script
 ```bash
-# Regular API (instant, standard pricing)
-python scripts/embed_chunks.py --batch-size 1000
-
-# Batch API (50% cheaper, 2-24 hour turnaround)
-python scripts/embed_chunks.py --use-batch-api --batch-size 10000
+# Ollama API (instant, free, 768d)
+python scripts/stage_4_embed_chunks.py --limit 1000 --workers 1
 ```
 
 ### What it does
 
-**Regular API:**
-1. Queries `document_chunks` WHERE `embedding IS NULL` LIMIT batch_size
-2. Extracts `embedding_text` from chunks
-3. Calls `EmbeddingService.embed_chunks(texts)`
-4. Updates chunks with embeddings
-5. For each document, checks if ALL chunks now have embeddings
-6. If complete: updates `document.ingestion_status='embedded'`
-
-**Batch API:**
-1. Queries chunks WHERE `embedding IS NULL`
-2. Calls `EmbeddingService.submit_batch_embed(chunks)`
-3. Saves batch_id to file
-4. Exits (run completion script later when batch finishes)
-5. Completion script: loads chunks, calls `get_batch_embed()`, updates embeddings
+**Ollama API (current implementation):**
+1. Queries `documents` WHERE `ingestion_status='chunked'` LIMIT batch_size
+2. For each document batch:
+   - Load all chunks for documents in batch
+   - Extract `embedding_text` from chunks
+   - Call `EmbeddingService.embed_chunks(texts, max_workers)` with Ollama
+   - Update chunks with embeddings (768d vectors)
+   - Mark documents as `ingestion_status='embedded'`
+3. Performance metrics:
+   - Sequential processing (~111ms/chunk with workers=1)
+   - Batch size: 50 documents at a time
+   - Logs timing per batch and overall progress
 
 ### Output
 - Chunks with `embedding` populated (Vector(768) - Ollama nomic-embed-text)
@@ -204,57 +199,52 @@ Re-running only processes chunks with `embedding IS NULL`
 
 ```bash
 # Stage 1: Collect PMC IDs
-python scripts/collect_pmc_ids.py --max-results 100000
+python scripts/stage_1_collect_ids.py --limit 100000
 # → 100K rows in pubmed_papers
 
 # Stage 2: Fetch papers (can run multiple times to resume)
-python scripts/fetch_papers.py --batch-size 100
+python scripts/stage_2_fetch_papers.py --limit 100000
 # → 100K rows in documents (may take ~9 hours with rate limiting)
 
 # Stage 3: Chunk documents
-python scripts/chunk_papers.py --batch-size 50
-# → ~10M rows in document_chunks (assuming ~100 chunks/paper)
+python scripts/stage_3_chunk_papers.py
+# → ~3.6M rows in document_chunks (assuming ~36 chunks/paper)
 
-# Stage 4: Embed chunks
-python scripts/embed_chunks.py --batch-size 1000
-# → All chunks get embeddings (may take hours, costs ~$200 with Regular API)
-
-# OR use Batch API (50% cheaper)
-python scripts/embed_chunks.py --use-batch-api --batch-size 100000
-# → Submit to OpenAI, come back tomorrow
-python scripts/complete_batch_embed.py --batch-id batch_abc123
+# Stage 4: Embed chunks with Ollama (free, 768d)
+python scripts/stage_4_embed_chunks.py --workers 1
+# → All chunks get embeddings (may take ~111 hours at 111ms/chunk, $0 cost)
 ```
 
 ### Monthly Updates: New and Revised Papers
 
 ```bash
 # Find papers revised in February 2025
-python scripts/collect_pmc_ids.py --query "diabetes[Title/Abstract] AND 2025/02/01:2025/02/28[lr]"
+python scripts/stage_1_collect_ids.py --query "diabetes[Title/Abstract] AND 2025/02/01:2025/02/28[lr]"
 # → Sets fetch_status='pending' for updated papers
 
 # Fetch updated papers (replaces old content)
-python scripts/fetch_papers.py --batch-size 100
+python scripts/stage_2_fetch_papers.py --limit 10000
 # → UPSERTs documents, sets ingestion_status='fetched'
 
 # Re-chunk (deletes old chunks)
-python scripts/chunk_papers.py --batch-size 50
+python scripts/stage_3_chunk_papers.py
 # → Creates new chunks with embedding=NULL
 
-# Re-embed
-python scripts/embed_chunks.py --batch-size 1000
-# → Updates embeddings
+# Re-embed with Ollama
+python scripts/stage_4_embed_chunks.py --workers 1
+# → Updates embeddings (free, 768d)
 ```
 
 ### Add New Therapeutic Area (Oncology)
 
 ```bash
 # Collect oncology PMC IDs
-python scripts/collect_pmc_ids.py --query "cancer[Title/Abstract] AND 2020:2025[pdat]" --max-results 100000
+python scripts/stage_1_collect_ids.py --query "cancer[Title/Abstract] AND 2020:2025[pdat]" --limit 100000
 
 # Run phases 2-4 as usual
-python scripts/fetch_papers.py --batch-size 100
-python scripts/chunk_papers.py --batch-size 50
-python scripts/embed_chunks.py --batch-size 1000
+python scripts/stage_2_fetch_papers.py --limit 100000
+python scripts/stage_3_chunk_papers.py
+python scripts/stage_4_embed_chunks.py --workers 1
 ```
 
 ## Key Design Decisions
@@ -317,36 +307,35 @@ Rationale:
 
 ## Cost Estimates
 
-### Initial Load: 100K Papers
+### Initial Load: 100K Papers (Ollama)
 
 **Assumptions:**
 - 100K papers
-- ~100 chunks/paper = 10M chunks
+- ~36 chunks/paper = 3.6M chunks
 - ~500 tokens/chunk average
+- 111ms/chunk embedding time (Ollama sequential)
 
 **Costs:**
 
 | Phase | Time | Cost | Notes |
 |-------|------|------|-------|
 | Stage 1: Collect IDs | ~10 min | Free | NCBI API is free |
-| Stage 2: Fetch papers | ~9 hours | Free | 3 req/sec limit, free API |
+| Stage 2: Fetch papers | ~27 hours | Free | 100 papers/min actual performance |
 | Stage 3: Chunk | ~1 hour | Free | Local processing |
-| Stage 4: Embed (Regular) | ~2 hours | ~$100 | 10M chunks × 500 tokens × $0.02/1M |
-| Stage 4: Embed (Batch) | 2-24 hours | ~$50 | 50% discount |
+| Stage 4: Embed (Ollama) | ~111 hours | **$0** | Self-hosted, 768d vectors |
 
-**Total:** ~$50-100 for initial load (depending on Regular vs Batch API)
+**Total:** $0 for initial load (all stages free with Ollama)
 
 ### Monthly Updates: ~5K Papers
 
 **Assumptions:**
 - 5% of papers revised/added monthly = 5K papers
-- ~500K chunks
+- ~180K chunks
 
 **Costs:**
-- Stage 1-3: Free (~30 min total)
-- Stage 4: ~$5 (Batch API) or ~$10 (Regular API)
+- All stages: Free (~10 hours total with Ollama)
 
-**Annual ongoing cost:** ~$60-120/year
+**Annual ongoing cost:** $0/year
 
 ## Monitoring Queries
 

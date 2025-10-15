@@ -99,16 +99,24 @@ chunk = {
 
 ### How it works
 
-1. Processes texts sequentially (one at a time)
+1. Processes texts sequentially by default (one at a time) when `max_workers=None` or `max_workers=1`
 2. Calls Ollama API at `http://host.docker.internal:11434/api/embeddings`
 3. If a request fails, logs error and sets that embedding to None, continues processing
-4. Small delay (0.1s) between requests to prevent overwhelming Ollama
-5. Returns all embeddings in order (with None for any failures) and cost ($0)
+4. Returns all embeddings in order (with None for any failures) and cost ($0)
+5. Optionally supports parallel processing with `max_workers > 1` (use with caution, see notes below)
 
 ### Configuration
 
-Default Ollama endpoint: `http://host.docker.internal:11434`
-Override with environment variable: `OLLAMA_BASE_URL=http://localhost:11434`
+**Ollama endpoint:**
+- Default: `http://host.docker.internal:11434`
+- Override with environment variable: `OLLAMA_BASE_URL=http://localhost:11434`
+
+**Parallel processing:**
+- Default: `max_workers=None` (sequential processing)
+- Use `max_workers=1` for explicit sequential processing
+- Use `max_workers > 1` for parallel processing (requires `OLLAMA_NUM_PARALLEL` environment variable)
+- Note: Benchmarking shows no performance improvement with parallel workers for real chunk sizes (768d embeddings)
+- Recommendation: Always use sequential processing (`max_workers=1` or `None`) for reliability and simplicity
 
 ---
 
