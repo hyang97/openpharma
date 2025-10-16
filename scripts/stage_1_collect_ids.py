@@ -56,6 +56,8 @@ For custom queries, always include 'open access[filter]' to ensure full-text ava
                        help="End date in YYYY-MM-DD format (default: 2025-12-31)")
     parser.add_argument("--date-field", type=str, default="pdat", choices=["pdat", "lr", "crdt"],
                        help="Date field to search: pdat=publication date, lr=last revision, crdt=created (default: pdat)")
+    parser.add_argument("--reset-fetched", action="store_true",
+                       help="Reset already-fetched papers to pending (default: skip already-fetched papers)")
 
     args = parser.parse_args()
 
@@ -83,6 +85,15 @@ For custom queries, always include 'open access[filter]' to ensure full-text ava
         )
 
     logger.info(f"Query: {query}\n")
+
+    # Log search to history file
+    from pathlib import Path
+    history_file = Path("logs/search_history.log")
+    history_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(history_file, "a") as f:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"{timestamp} | Query: {query} | Limit: {limit or 'all'}\n")
 
     # Search PubMed with pagination
     limit = args.limit
@@ -118,18 +129,30 @@ For custom queries, always include 'open access[filter]' to ensure full-text ava
 
         batch_num += 1
 
-    # Insert into database (reset to pending if already exists)
+    # Insert into database
     with Session(engine) as session:
         for pmc_id in all_pmc_ids:
             stmt = insert(PubMedPaper).values(pmc_id=pmc_id, fetch_status='pending')
-            stmt = stmt.on_conflict_do_update(
-                index_elements=['pmc_id'],
-                set_={'fetch_status': 'pending'}
-            )
+
+            if args.reset_fetched:
+                # Reset all papers to pending (even if already fetched)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=['pmc_id'],
+                    set_={'fetch_status': 'pending'}
+                )
+            else:
+                # Skip papers that already exist (do nothing on conflict)
+                stmt = stmt.on_conflict_do_nothing(index_elements=['pmc_id'])
+
             session.execute(stmt)
+
         session.commit()
 
-    logger.info(f"Collected and inserted {len(all_pmc_ids)} PMC IDs")
+    logger.info(f"Collected {len(all_pmc_ids)} PMC IDs")
+
+    # Append result to search history
+    with open(history_file, "a") as f:
+        f.write(f"         → Result: {len(all_pmc_ids)} PMC IDs collected\n\n")
 
 
 if __name__ == "__main__":
