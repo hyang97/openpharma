@@ -1,15 +1,14 @@
 # OpenPharma TODO List
 
-Last updated: 2025-10-14
+Last updated: 2025-10-16
 
-## Current Sprint: Complete Ollama Embeddings
+## Current Sprint: Build RAG Query Interface
 
 ### Active Tasks
-- [ ] Re-embed all chunks with Ollama (~55 hours for 1.77M chunks)
-  - Command: `docker-compose run --rm -d --name api-embed api bash -c "python -m scripts.stage_4_embed_chunks --workers 1"`
-  - Monitor: `docker exec api-embed tail -f logs/stage_4_embed_chunks.log`
-  - Current: 3,714 docs embedded (117K chunks), 48,300 docs remaining
-- [ ] Validate full embeddings with semantic quality tests
+- [ ] Implement semantic search retrieval (top-K similarity search)
+- [ ] Build LLM synthesis with citation tracking
+- [ ] Create Streamlit conversational interface
+- [ ] Set up RAGAS evaluation framework
 
 **CRITICAL: Ollama Version Requirement**
 - **MUST use Ollama 0.11.x** (tested on 0.11.11)
@@ -17,20 +16,17 @@ Last updated: 2025-10-14
 - Download 0.11.11: https://github.com/ollama/ollama/releases/tag/v0.3.11
 - Disable auto-updates in Ollama app
 
-**Performance Notes:**
-- Sequential processing: ~111ms/chunk (workers=1 recommended)
-- Parallel workers provide NO speedup for real chunk sizes
-- Ollama: 11x faster queries, $0 cost, better semantic clustering vs OpenAI
-
 ---
 
 ## Backlog (Future Phases)
 
-### Phase 1 - Finish Testing
-- [ ] Test full pipeline end-to-end after complete embedding
+### Phase 1 - Testing & Enhancement
 - [ ] Test re-fetching (UPSERT behavior)
 - [ ] Test re-chunking (delete old chunks)
 - [ ] Refine diabetes search with MeSH terms (may add ~few thousand more papers)
+- [ ] Enhanced metadata extraction (author affiliations, MeSH terms)
+- [ ] Targeted topic expansion (Obesity, Cardiovascular Disease)
+- [ ] Landmark paper augmentation (highly-cited foundational papers)
 
 ### Phase 2 - Multi-Domain Intelligence
 - [ ] Add ClinicalTrials.gov integration
@@ -53,12 +49,12 @@ Last updated: 2025-10-14
 
 ## Project Context
 
-### Dataset Status (52K Papers)
+### Dataset Status (52K Papers - COMPLETE)
 - PMC IDs collected: 52,014
 - Papers fetched: 52,014 (100%)
 - Documents chunked: 52,014 (100% → 1.89M chunks, 717M tokens)
-- Chunks embedded: 3,714 docs (117K chunks, 6%)
-- Remaining: 48,300 docs (~55 hours at 111ms/chunk)
+- Chunks embedded: 52,014 (100% → 1.89M chunks with 768d vectors)
+- **Ingestion pipeline complete** - ready for RAG implementation
 
 ### Tech Stack
 - Database: Postgres + pgvector, HNSW index (m=16, ef_construction=64)
@@ -77,12 +73,15 @@ Last updated: 2025-10-14
 
 See `archive/TODO_completed_20251014.md` for detailed history.
 
-**Phase 1 Ingestion Pipeline:**
-- 4-stage decoupled pipeline implemented and tested
-- 52K diabetes papers collected, fetched, and chunked
+**Phase 1 Ingestion Pipeline (COMPLETE):**
+- 4-stage decoupled pipeline implemented and fully executed
+- 52,014 diabetes papers: collected → fetched → chunked → embedded
+- 1.89M chunks with 768d Ollama embeddings (100% complete)
 - Comprehensive documentation and test suite
+- Total cost: $0 (all self-hosted with Ollama)
 
 **Ollama Migration:**
 - Migrated from OpenAI (1536d, paid) to Ollama (768d, free)
 - Schema updated, code simplified, docs updated
 - Performance benchmarked: sequential processing recommended
+- Successfully embedded entire 52K paper corpus

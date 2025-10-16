@@ -1,31 +1,40 @@
 # Project OpenPharma: Product Brief & Technical Specification
 
-## Part 1: Product Brief
+## 1. Product Vision
 
-### Mission Statement
-Provide life sciences commercial teams with a unified strategic intelligence engine, transforming disconnected data into continuous, evidence-backed insights through a conversational AI interface.
-
-### The Problem
-Pharma Brand and Competitive Intelligence teams are drowning in data but starving for insight. Answering "What is our competitor's clinical trial strategy?" requires manually searching multiple databases, reading dense documents, and piecing together summaries. This process takes days and produces static reports that are instantly outdated.
-
-### The Solution
-OpenPharma is an AI-powered strategic intelligence engine providing a conversational interface to pharmaceutical data. Users ask complex strategic questions in natural language and receive immediate, synthesized answers with every assertion backed by direct citations.
+### Description and Value Proposition
+OpenPharma is an AI-powered research & insights engine, providing life sciences companies and consultants with an "on-demand pharma analyst." Users can ask questions in natural language and receive instant, synthesized answers (backed by credible evidence with verifiable citations), transforming a multi-day research process into a matter of minutes. 
 
 ### Target User
 - Competitive Intelligence Analysts
 - Brand Managers
 - Management Consultants (pharma/biotech)
 
-### Core Value Proposition
-Move from manual research (8 hours) to real-time strategic reasoning (10 minutes). OpenPharma provides an "on-demand analyst" for pharmaceutical competitive intelligence.
+### Pain points solved
+- Accelerated time-to-insights: pharma research, synthesis, and insights takes days/weeks to manually review and synthesize dense literature. OpenPharma reduces this to minutes, providing immediate, synthesized answers with every assertion backed by direct citations.
+- Hidden connections: manually researching and traingulating insights between multiple data sources across scientific literature, clinical trials, regulatory filings, etc. is complex. OpenPharma unifies this data and surfaces interconnected insights.
+
+### Core Offering
+OpenPharma is a conversational AI platform that allows users to:
+1. Quary and Synthesize Scientific Literature: Ask questions about drug efficiacy, safety, mechanisms of action, key opinion leaders, etc.
+2. Analyze the Clinical Trial Landscape: Investigate competitor trial stratgies, compare study designs, and track development pipelines
+3. Connect Research to Commercial Strategy: Link insights across scientific discoveries, clinical trials, regulatory approvals, corporate financial disclosures, etc. to build a 360-degree view of the market.
+
+### Core Interface
+User interacts with OpenPharma through a clean, intuitive, two-panel interface, similar to OpenEvidence.com and ChatGPT
+1. Left Panel (20%): Persistent, searchable conversation history
+2. Right Panel (80%): Primary workspace featuring chat interface, with a response area that clearly presents interactive, inline citations that link directly back to the source document
+3. Landing Page: Clean, chat input interface, with an expandable set of example questions the user can ask
 
 ---
 
-## Part 2: Phased Development Roadmap
+
+
+## 2. Development Plan
 
 ### **Phase 1: Research Literature Intelligence MVP (Weeks 1-4)**
 
-**Current Implementation Focus:** Diabetes research (changed from cancer for initial development)
+**Current Implementation Focus:** Diabetes research (changed from cancer for initial development). Initial database contains full-text articles for the keyword "diabetes" from PubMed Central from the last 5 years.
 
 **Status:** Implementing 4-phase decoupled ingestion pipeline. See `docs/ingestion_pipeline.md` for technical architecture.
 
@@ -36,8 +45,65 @@ Move from manual research (8 hours) to real-time strategic reasoning (10 minutes
 
 #### Data Sources
 - **PubMed Central Open Access** - 8M+ full-text research papers
-  - Diabetes research focus (~100K papers for Phase 1)
+  - Diabetes research focus (~52K papers for Phase 1)
   - Published study results, treatment outcomes, biomarker data, safety profiles
+
+#### Phase 1 Data Strategy
+
+**Current Pipeline Implementation:**
+- 4-phase decoupled ingestion pipeline (see `docs/ingestion_pipeline.md`)
+- Initial target: ~52K diabetes papers from PubMed Central (2020-2025)
+- Metadata extraction (already implemented):
+  - Authors, journal, publication date, DOI, PMID (via NCBI esummary API)
+  - Section structure and character offsets (via JATS XML parsing)
+- Fully automated from search → fetch → chunk → embed
+- Cost: $0 (all local processing with Ollama)
+
+**Phase 1 Backlog: Data Enhancement "Quick Wins"**
+
+To validate all Phase 1 use cases, these enhancements will be integrated into the existing ingestion pipeline:
+
+**Quick Win #1: Enhanced Metadata Extraction** *(Partially Done)*
+* **Status:** Basic author names already extracted via esummary. Need to add:
+    - Author affiliations (institutional mapping for KOL analysis)
+    - Publication type (clinical trial, review, meta-analysis, etc.)
+    - MeSH (Medical Subject Headings) terms (biomarker and topic analysis)
+* **Implementation:** Query PubMed database (not PMC) via efetch for additional metadata:
+    ```
+    https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={PMID}&retmode=xml
+    ```
+* **Note:** Need to convert PMC ID → PMID first (can use NCBI ID Converter API or extract from existing metadata)
+* **Storage:** Add to `documents.doc_metadata` JSONB field
+* **Benefit:** Enables filtering by research type, institution, and medical concepts
+
+**Quick Win #2: Targeted "Lookalike" Topic Expansion**
+* **Objective:** Demonstrate platform scalability beyond single disease area with related therapeutic areas.
+* **Implementation:** Run Stage 1 (collect_ids.py) with additional search queries:
+    - **Target Topics:** "Obesity" and "Cardiovascular Disease"
+    - Same 5-year time horizon (2020-2025)
+    - Estimated: ~20K papers per topic
+* **API Call:**
+    ```
+    https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term={"obesity"[MeSH Terms]}&retmax=10000&mindate=2020/01/01&maxdate=2024/12/31
+    ```
+* **Benefit:** Validates cross-disease queries and demonstrates data pipeline reusability
+
+**Quick Win #3: Landmark Paper Augmentation**
+* **Objective:** Add historical context by ingesting foundational, highly-cited papers that modern research builds upon.
+* **Implementation:**
+    1. Create new script: `scripts/collect_landmark_papers.py`
+    2. For key drug classes (Metformin, SGLT2i, GLP-1, Insulin, DPP-4i):
+        - Search PubMed for papers from 1990-2020
+        - Query NIH iCite API for citation counts
+        - Select top 20 most-cited papers per class (~100 papers total)
+    3. Insert PMC IDs into `pubmed_papers` table with special flag
+    4. Run normal pipeline (Stages 2-4)
+* **NIH iCite API Call:**
+    ```
+    https://icite.od.nih.gov/api/pubs?pmids={PMID1,PMID2,...}
+    ```
+* **Storage:** Add `is_landmark` flag to `documents.doc_metadata`
+* **Benefit:** Enables historical context queries and citation network analysis
 
 #### System Architecture
 
@@ -81,12 +147,13 @@ Cloud Monitoring (observability)
    - Click-through to PubMed Central
    - 95%+ citation accuracy
 
-3. **Weekly Data Updates**
-   - Automated ingestion from PubMed Central API
-   - Token-based chunking (512 tokens, 50-token overlap)
-   - Section-based organization (Abstract, Methods, Results, Discussion)
-   - Context-enhanced embeddings (title + section prepended)
-   - Batch embedding workflow for cost efficiency
+3. **4-Phase Decoupled Ingestion Pipeline**
+   - Phase 1: Collect PMC IDs from PubMed searches
+   - Phase 2: Fetch and parse full-text papers
+   - Phase 3: Token-based chunking (512 tokens, 50-token overlap) with section-aware processing
+   - Phase 4: Generate embeddings with Ollama (free, 768d)
+   - Each phase is independently resumable and stores persistent state
+   - See `docs/ingestion_pipeline.md` for complete architecture
 
 4. **Evaluation & Quality Assurance**
    - RAGAS evaluation framework (faithfulness, answer relevancy, context recall)
@@ -100,10 +167,12 @@ Cloud Monitoring (observability)
   - **CRITICAL:** MUST use Ollama 0.11.x (tested on 0.11.11). DO NOT upgrade to 0.12.5 (has regression bug causing EOF errors)
 - **Vector Index:** HNSW (m=16, ef_construction=64) for fast similarity search
 - **Database Schema:**
-  - `documents` table: Metadata only (no document-level embeddings)
+  - `pubmed_papers` table: Track PMC IDs and fetch status (supports 4-phase pipeline)
+  - `documents` table: Full document content and metadata with ingestion_status tracking
   - `document_chunks` table: Chunked content with VECTOR(768) embeddings
-  - UNIQUE(source, source_id) constraint for deduplication
+  - UNIQUE(source, source_id) constraint on documents for deduplication
   - JSONB columns for flexible source-specific metadata
+  - See `docs/data_design.md` for complete schema documentation
 - **Retrieval:** Top-20 semantic nearest neighbors via cosine similarity
 - **Development Cost:** $0/month (local Ollama + local Postgres)
 - **Demo Cost:** $5-15/month (OpenAI GPT-4 calls when needed)
@@ -126,6 +195,18 @@ Cloud Monitoring (observability)
 ---
 
 ### **Phase 2: Multi-Domain Intelligence Platform (Weeks 5-12)**
+
+**Objective:** Expand the platform's strategic value by integrating clinical trial and regulatory data, enabling users to connect scientific research to real-world product development and corporate strategy.
+
+**Core User Persona:** Brand Manager, Clinical Operations Lead, Management Consultant.
+
+**Key Success Metrics:**
+- Successfully support cross-domain queries linking clinical, regulatory, and research data
+- Enable multi-step, agentic research workflows for complex questions
+- Populate a knowledge graph with over 1 million relationships between drugs, trials, and companies
+- Users begin citing OpenPharma insights in internal strategic planning documents
+
+**Target Use Cases:** See `docs/use_cases.md` for detailed Phase 2 use cases covering clinical trial strategy, regulatory intelligence, cross-domain competitive landscape, and agentic workflows.
 
 #### Business Capabilities Unlocked
 - **Cross-Domain Analysis:** "What clinical trials support the drugs mentioned in recent oncology research, and what are their regulatory statuses?"
@@ -188,6 +269,20 @@ Cloud Monitoring (production observability)
    - A/B test different LLM providers
    - Log evaluation metrics (faithfulness, relevancy)
 
+#### Phase 2 Front-End Requirements
+
+**Multi-Source Data Handling:**
+- Source Indicators: Citation markers will be visually distinct to differentiate between PubMed, ClinicalTrials.gov, and FDA data sources
+- Structured Data Views: Clicking a citation for a clinical trial will open a dedicated, structured view in the side panel showing key fields like Phase, Status, Sponsor, and Endpoints
+
+**Agentic Workflow Visualization:**
+- Execution Plan Display: For multi-step queries, the UI will first display the agent's plan (e.g., "Step 1: Identify competitors... Step 2: Analyze trials...")
+- Real-time Progress: The UI will visually indicate which step is currently being executed (e.g., with a loading spinner) and which steps are complete (e.g., with a checkmark)
+
+**Optional User Accounts:**
+- Introduce an optional, simple account system (e.g., SSO with Google/Microsoft) to enable features like cross-device conversation history
+- Cookie-based approach will remain the default for guest users
+
 #### Technical Details
 - **Relationship Schema:** Papers ↔ Trials ↔ Drugs ↔ Companies (Postgres JSONB, not Neo4j in Phase 2)
 - **Agent Types:** ReAct, Plan-and-Execute, Multi-agent collaboration
@@ -197,6 +292,18 @@ Cloud Monitoring (production observability)
 ---
 
 ### **Phase 3: Optimized ML Infrastructure (Weeks 13+)**
+
+**Objective:** Transition from a reactive information retrieval tool to a proactive strategic foresight engine by incorporating predictive analytics, unstructured data sources, and optimized, self-hosted models.
+
+**Core User Persona:** Director of Strategy, Business Development & Licensing Lead, Portfolio Manager.
+
+**Key Success Metrics:**
+- Achieve an 80% cost reduction for inference through self-hosted models
+- Fine-tuned models match or exceed GPT-4 performance on domain-specific tasks
+- Platform-generated predictive analytics are used in a client's annual portfolio planning process
+- Maintain <100ms inference latency for self-hosted models
+
+**Target Use Cases:** See `docs/use_cases.md` for detailed Phase 3 use cases covering predictive analytics, emerging science analysis, patient voice insights, and financial/corporate strategy linkage.
 
 #### Business Capabilities Unlocked
 - **Predictive Analytics:** "Forecast patent cliff events for our portfolio 3-5 years out"
@@ -266,7 +373,7 @@ Cloud Storage (document store)
 
 ---
 
-## Part 3: Key Design Decisions
+## 3. Key Design Decisions
 
 ### Why These Choices?
 

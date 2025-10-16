@@ -195,25 +195,33 @@ Re-running only processes chunks with `embedding IS NULL`
 
 ## Workflow Examples
 
-### Initial Load: 100K Diabetes Papers
+### Initial Load: 52K Diabetes Papers (COMPLETED)
+
+**Status:** Complete as of 2025-10-16
 
 ```bash
-# Stage 1: Collect PMC IDs
+# Stage 1: Collect PMC IDs (DONE)
 python scripts/stage_1_collect_ids.py --limit 100000
-# → 100K rows in pubmed_papers
+# → 52,014 diabetes papers collected (2020-2025)
 
-# Stage 2: Fetch papers (can run multiple times to resume)
+# Stage 2: Fetch papers (DONE)
 python scripts/stage_2_fetch_papers.py --limit 100000
-# → 100K rows in documents (may take ~9 hours with rate limiting)
+# → 52,014 papers fetched and parsed
 
-# Stage 3: Chunk documents
+# Stage 3: Chunk documents (DONE)
 python scripts/stage_3_chunk_papers.py
-# → ~3.6M rows in document_chunks (assuming ~36 chunks/paper)
+# → 1.89M chunks created
 
-# Stage 4: Embed chunks with Ollama (free, 768d)
+# Stage 4: Embed chunks with Ollama (DONE)
 python scripts/stage_4_embed_chunks.py --workers 1
-# → All chunks get embeddings (may take ~111 hours at 111ms/chunk, $0 cost)
+# → 1.89M chunks embedded with 768d vectors
+# → Total cost: $0 (self-hosted Ollama)
 ```
+
+**Results:**
+- 52,014 documents ingested
+- 1,888,160 chunks with embeddings
+- Vector database ready for semantic search
 
 ### Monthly Updates: New and Revised Papers
 
