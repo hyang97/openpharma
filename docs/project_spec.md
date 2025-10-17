@@ -373,39 +373,9 @@ Cloud Storage (document store)
 
 ---
 
-## 3. Key Design Decisions
+## 3. Future Design Decisions
 
-### Why These Choices?
-
-**Postgres + pgvector vs. Pinecone:**
-- Postgres sufficient for <1M documents
-- $0-50/month vs. $70-200/month
-- HNSW index provides excellent performance for our scale
-- Simpler deployment, no external dependencies
-- Upgrade to dedicated vector DB only when scale demands it
-
-**Ollama nomic-embed-text (self-hosted):**
-- 768 dims (efficient, proven for semantic search)
-- Self-hosted via Ollama ($0 cost)
-- **CRITICAL:** Must use Ollama 0.11.x (0.12.5 has regression bug)
-- Fast inference (~36ms per embedding)
-- Better semantic clustering than OpenAI in benchmarks
-
-**Chunk-level search only (no document embeddings):**
-- Prevents context bloat (20-page paper → focused 512-token chunk)
-- Better retrieval accuracy for specific questions
-- Lower LLM costs (smaller context windows)
-- Documents table stores metadata only
-
-**Streamlit (Phase 1) → React (Phase 2):**
-- Streamlit = rapid prototyping, ship in days
-- React = professional polish, production UX
-- Prove value before investing in frontend complexity
-
-**Raw Python RAG (Phase 1) → LangChain (Phase 2):**
-- Understand primitives before abstractions
-- Better interview narrative: "Built from scratch, then adopted industry tools"
-- LangChain valuable when adding agents and complex workflows
+Implementation decisions are tracked in `docs/decisions.md`. The following are planned for future phases:
 
 **Cloud Monitoring throughout:**
 - Native GCP integration, sufficient for most use cases
