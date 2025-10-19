@@ -11,13 +11,13 @@ OpenPharma is an AI-powered strategic intelligence engine for pharmaceutical com
 The project follows a phased development approach across three phases:
 
 ### Phase 1: Research Literature Intelligence MVP (Current)
-- **Tech Stack**: FastAPI backend, Streamlit UI (planned), Ollama Llama 3.1 8B/OpenAI GPT-4 (configurable), Local Postgres + pgvector
-- **Primary Data Source**: PubMed Central Open Access (diabetes research focus)
-- **Core Capability**: Conversational RAG interface for research literature queries
-- **Current Status**: Implementing 4-phase decoupled ingestion pipeline (see `docs/ingestion_pipeline.md`)
+- **Tech Stack**: Next.js/React UI, FastAPI backend, Ollama Llama 3.1 8B/OpenAI GPT-4 (configurable), Local Postgres + pgvector
+- **Primary Data Source**: PubMed Central Open Access (diabetes research focus, ~52K papers)
+- **Core Capability**: Conversational RAG interface with sequential citations
+- **Status**: ✅ RAG pipeline implemented, ✅ React UI built, ⏳ Conversation history & query rewriting pending
 
 ### Phase 2: Multi-Domain Intelligence Platform
-- **Tech Stack**: Next.js/React frontend, FastAPI + LangChain/LangGraph for agent orchestration, Postgres JSONB for relationships
+- **Tech Stack**: FastAPI + LangChain/LangGraph for agent orchestration, Postgres JSONB for relationships
 - **Data Sources**: ClinicalTrials.gov, FDA Drugs@FDA, DailyMed, SEC EDGAR (optional)
 - **Key Features**: Agentic workflows, cross-domain queries, MCP tool integration
 
@@ -27,52 +27,75 @@ The project follows a phased development approach across three phases:
 
 ## Key Technical Components
 
+### RAG Pipeline (Implemented)
+- **Retrieval**: Semantic search via pgvector (top-20 chunks by cosine similarity)
+- **Generation**: Ollama Llama 3.1 8B or OpenAI GPT-4 (configurable via `use_local` flag)
+- **Citation Extraction**: Regex-based PMC ID extraction → sequential renumbering [1], [2], etc.
+- **Response Model**: `RAGResponse` with answer, citations list, query, LLM provider, timing
+- See `app/rag/generation.py` for implementation
+
+### React UI (Implemented)
+- **Framework**: Next.js 15 + TypeScript + Tailwind CSS
+- **Design**: Dark theme (slate + cobalt blue), OpenEvidence-inspired centered input
+- **Components**: 5 modular components (ChatHeader, MessageList, MessageBubble, CitationList, ChatInput)
+- **State Management**: React useState in main page component
+- **Features**: Loading indicators, clickable header to return home, Enter to send
+- **Shared Types**: `src/types/message.ts` for Message and Citation types
+- See `docs/ui_design.md` for complete design documentation
+
 ### Data Processing
-- **Chunking Strategy**: Token-based chunking (512 tokens, 50-token overlap) with section-aware processing
-  - Each section (abstract, introduction, methods, results, etc.) chunked separately to preserve semantic boundaries
-  - Title NOT chunked (included in every chunk's embedding context)
-- **Context Enhancement**: Document title + section name prepended to embeddings via `embedding_text` field (not stored in DB)
-- **Vector Embeddings**: 1536 dimensions (OpenAI text-embedding-3-small)
-- **Index Type**: HNSW (m=16, ef_construction=64) for fast similarity search
-
-### Infrastructure Choices
+- **Chunking**: 512 tokens with 50-token overlap, section-aware (abstract, methods, results separately)
 - **Embeddings**: Ollama nomic-embed-text (768d, self-hosted, $0 cost)
-  - **CRITICAL**: MUST use Ollama version 0.11.x (tested on 0.11.11)
-  - **DO NOT upgrade to 0.12.5** - has regression bug causing EOF errors with concurrent requests
-  - Download 0.11.11 from: https://github.com/ollama/ollama/releases/tag/v0.3.11
-  - Disable auto-updates in Ollama app to prevent regression
-  - Symptom of bug: `{"error":"do embedding request: Post \"http://127.0.0.1:XXXXX/embedding\": EOF"}`
-- **Vector Store**: Local Postgres + pgvector (cost-effective for <1M documents)
-- **Database**: Service name `postgres`, database `openpharma`, user `admin` (use in docker-compose exec commands)
-- **Schema Design**:
-  - `pubmed_papers` table: Tracks PMC IDs and fetch status (NEW - Phase 1)
-    - `pmc_id` (PK): Numeric ID only (e.g., "1234567", not "PMC1234567")
-    - `fetch_status`: 'pending', 'fetched', 'failed'
-  - `documents` table: Stores complete document text + metadata
-    - `full_text` contains title + abstract + all body sections with headers
-    - `doc_metadata['section_offsets']` tracks character positions for section recovery
-    - `ingestion_status`: 'fetched', 'chunked', 'embedded' (NEW - Phase 1)
-    - See `docs/data_design.md` for detailed section storage strategy
-  - `document_chunks` table: Chunked content with VECTOR(1536) embeddings
-    - `content` field stores raw chunk text
-    - `section` field identifies source section (abstract, methods, results, etc.)
-    - `char_start/char_end` point into parent document's `full_text`
-    - `embedding` can be NULL (indicates needs embedding)
-  - JSONB columns (`doc_metadata`) for source-specific fields
-  - UNIQUE constraint on (source, source_id) for deduplication
-- **LLM Strategy**: Hybrid local (Ollama) + cloud (OpenAI) via environment configuration
-- **Deployment**: Local Docker development, GCP Cloud Run for demos (planned)
-- **Logging**: Python logging module with configurable levels (see `docs/logging.md`)
-  - Log outcomes, not attempts (reduces noise)
-  - API logs: `logs/openpharma.log` (static filename)
-  - Script logs: Active file (e.g., `logs/fetch_papers.log`) archived with timestamp on next run
-- **Orchestration**: LangChain + LangGraph for agentic workflows (Phase 2+)
+  - **CRITICAL**: MUST use Ollama 0.11.x (tested on 0.11.11)
+  - **DO NOT upgrade to 0.12.5** - regression bug causes EOF errors
+  - Download: https://github.com/ollama/ollama/releases/tag/v0.3.11
+- **Vector Index**: HNSW (m=16, ef_construction=64)
 
-### Key Design Patterns
-- Conversational RAG with semantic search
-- Verifiable citations linked to source data
-- Multi-step agentic research workflows
-- Knowledge graph traversal for complex queries
+### Database Schema
+- **`pubmed_papers`**: Track PMC IDs and fetch status (pmc_id, fetch_status)
+- **`documents`**: Full text + metadata (full_text, doc_metadata JSONB, ingestion_status)
+- **`document_chunks`**: Chunked content with VECTOR(768) embeddings
+- UNIQUE constraint on (source, source_id) for deduplication
+- See `docs/data_design.md` for detailed schema
+
+### Ingestion Pipeline (4 Decoupled Stages)
+1. **Collect IDs**: `scripts/stage_1_collect_ids.py` → PubMed search → store PMC IDs
+2. **Fetch Papers**: `scripts/stage_2_fetch_papers.py` → XML fetch/parse → UPSERT documents
+3. **Chunk Documents**: `scripts/stage_3_chunk_papers.py` → tokenize → create chunks
+4. **Embed Chunks**: `scripts/stage_4_embed_chunks.py` → Ollama embeddings → update vectors
+
+Each stage is independently resumable and idempotent. See `docs/ingestion_pipeline.md`.
+
+## Common Commands Reference
+
+**Always refer to these examples when running commands. DO NOT guess syntax.**
+
+### Docker Commands
+```bash
+# Start/stop containers
+docker-compose up -d              # Start in background
+docker-compose down               # Stop containers
+docker-compose ps                 # Check status
+docker-compose logs -f api        # Follow logs
+
+# Execute commands in running container
+docker-compose exec api python -m scripts.stage_1_collect_ids --limit 50
+docker-compose exec postgres psql -U admin -d openpharma -c "SELECT COUNT(*) FROM documents;"
+
+# Run detached background job (for long-running tasks)
+docker-compose run --rm -d --name api-fetch api bash -c "python -m scripts.stage_2_fetch_papers"
+docker exec api-fetch tail -f logs/stage_2_fetch_papers.log  # Monitor (use docker, not docker-compose)
+docker stop api-fetch  # Stop when done
+```
+
+### UI Commands
+```bash
+cd ui
+npm install              # Install dependencies (first time)
+npm run dev              # Start dev server at http://localhost:3000
+```
+
+**See `docs/cheatsheet.md` for complete command reference.**
 
 ## Development Guidelines
 
@@ -90,6 +113,10 @@ This is a learning-focused AI engineering project optimized for hands-on experie
 5. **Cost-Conscious**: <$100 total project cost via local development + selective cloud demos
 6. **Phase-based Learning**: Master RAG fundamentals before advancing to agents and optimization
 7. **Documentation-First**: Always document design decisions before implementation (see `docs/`)
+   - **Significant architectural decisions** → `docs/decisions.md` (e.g., Postgres vs Pinecone, React vs Streamlit)
+   - **UI/UX design patterns** → `docs/ui_design.md`
+   - **Pipeline architecture** → `docs/ingestion_pipeline.md`
+   - **NOT for minor styling choices** (e.g., Tailwind class names, color palette tweaks)
 8. **Slow and Steady**: Build understanding step-by-step, prioritize learning over speed
 9. **Professional Documentation**: No emojis in code files, documentation, or comments. Emojis are fine in conversational responses to the user.
 10. **No One-Off Scripts**: Avoid creating temporary Python scripts for debugging or database checks. Use bash commands with inline Python or docker-compose exec for ad-hoc operations.
@@ -117,9 +144,30 @@ app/
 │   ├── pubmed_fetcher.py   # Fetch papers from PubMed Central API
 │   ├── xml_parser.py       # Parse JATS XML from PMC (includes table extraction)
 │   ├── chunker.py          # Token-based section-aware chunking
-│   └── embeddings.py       # OpenAI embedding generation (regular + batch API)
+│   └── embeddings.py       # Ollama embedding generation
+├── rag/
+│   ├── __init__.py         # Exports RAGResponse, Citation
+│   └── generation.py       # RAG generation with citation extraction
+├── retrieval.py            # Semantic search via pgvector
 ├── logging_config.py       # Centralized logging configuration
-└── main.py                 # FastAPI application
+└── main.py                 # FastAPI application with /ask endpoint
+
+ui/
+├── src/
+│   ├── app/
+│   │   ├── page.tsx        # Main chat page (client component)
+│   │   ├── layout.tsx      # Root layout
+│   │   └── globals.css     # Global Tailwind styles
+│   ├── components/
+│   │   ├── ChatHeader.tsx  # Header with clickable home button
+│   │   ├── MessageList.tsx # Message container with loading state
+│   │   ├── MessageBubble.tsx # Individual message display
+│   │   ├── CitationList.tsx  # Citation cards
+│   │   └── ChatInput.tsx   # Input field with send button
+│   └── types/
+│       └── message.ts      # Shared TypeScript types
+├── package.json
+└── tsconfig.json
 
 scripts/
 ├── stage_1_collect_ids.py     # Stage 1: Search and store PMC IDs
@@ -129,14 +177,17 @@ scripts/
 
 docs/
 ├── project_spec.md         # Project specification and requirements
+├── ui_design.md            # UI design documentation (NEW)
 ├── ingestion_pipeline.md   # 4-stage decoupled pipeline architecture
 ├── data_design.md          # Database schema and storage strategy
+├── decisions.md            # Architecture decision log (NEW)
 ├── embedding_service.md    # EmbeddingService API reference
 ├── logging.md              # Logging guide and best practices
 └── cheatsheet.md           # Common commands reference
 
 tests/
-└── test_pipeline.py        # Integration tests for ingestion pipeline
+├── test_pipeline.py        # Integration tests for ingestion pipeline
+└── test_generation.py      # Unit tests for citation extraction (NEW)
 
 archive/                    # Archived/outdated files (code, docs, configs)
 data/batches/               # Batch API files (gitignored)
@@ -149,23 +200,15 @@ data/batches/               # Batch API files (gitignored)
 - **Phase 2**: ClinicalTrials.gov, FDA Drugs@FDA, DailyMed
 - **Phase 3**: USPTO, NIH RePORTER, Patient Forums, Conference Abstracts
 
-### Integration Patterns - 4-Phase Decoupled Pipeline
+### Ingestion Pipeline Details
 
 **See `docs/ingestion_pipeline.md` for complete architecture.**
-
-1. **Phase 1 - Collect PMC IDs**: Search PubMed → Store IDs in `pubmed_papers` table
-2. **Phase 2 - Fetch Papers**: Fetch XML → Parse → UPSERT into `documents` table
-3. **Phase 3 - Chunk Documents**: Create chunks with NULL embeddings
-4. **Phase 4 - Embed Chunks**: Generate embeddings, update chunks
 
 **Key Features:**
 - Each phase is independent and resumable
 - Idempotent operations (can re-run without duplicates)
 - Document updates via PubMed `[lr]` (last revision) date field
 - UPSERT replaces old documents (no version history)
-- Embedding options:
-  - **Regular API**: Instant results, standard pricing (~$100 for 100K papers)
-  - **Batch API**: 24-hour turnaround, 50% cheaper (~$50 for 100K papers)
 - Rate limiting: NCBI API limited to 3 requests/second (0.34s sleep between calls)
 - **NCBI Large Job Policy**: Run large jobs (>1000 papers) during off-peak hours only:
   - Weekends (anytime)
@@ -175,11 +218,14 @@ data/batches/               # Batch API files (gitignored)
 ## Success Metrics
 
 ### Phase 1 Targets (Learning Focused)
-- Working RAG system with research literature
-- <30 second response time for complex queries
-- 95%+ citation accuracy measurement
-- Docker deployment + Cloud Run demo
-- RAGAS evaluation framework implementation
+- ✅ Working RAG system with research literature
+- ✅ React UI with dark theme and citation display
+- ⏳ <30 second response time for complex queries
+- ⏳ 95%+ citation accuracy measurement
+- ⏳ Multi-turn conversation support
+- ⏳ Query rewriting for better retrieval
+- ⏳ Docker deployment + Cloud Run demo
+- ⏳ RAGAS evaluation framework implementation
 
 ### Phase 2 Targets
 - Support cross-domain queries

@@ -19,11 +19,13 @@ Key technical decisions made during OpenPharma development.
 **Why**: Prevents context bloat, better retrieval accuracy for specific questions, lower LLM costs (smaller context windows).
 **Tradeoff**: Can't do document-level similarity search (not needed for current use cases).
 
-## Phase 1-2: Streamlit → React progression
-**Problem**: Need UI for Phase 1 MVP, but want professional polish later.
-**Decision**: Start with Streamlit (Phase 1), migrate to React (Phase 2).
-**Why**: Streamlit enables rapid prototyping (ship in days), React provides production UX. Prove value before investing in frontend complexity.
-**Tradeoff**: Will need to rewrite UI in Phase 2, but speed-to-market more important initially.
+## 2025-10-19: Built React UI in Phase 1 (Decision Reversal)
+**Problem**: Need UI for Phase 1 MVP, but want professional polish.
+**Original Decision**: Start with Streamlit (Phase 1), migrate to React (Phase 2).
+**Actual Decision**: Built Next.js + React + TypeScript UI directly in Phase 1.
+**Why**: User experience matters from day 1, React skills transferable to other projects, modern web stack more portfolio-friendly than Streamlit.
+**Tradeoff**: Steeper learning curve for React beginners, but worth it for production-quality UI from start.
+**Note**: This reversed the original plan documented below. Keeping for historical context.
 
 ## Phase 1-2: Raw Python RAG → LangChain progression
 **Problem**: Build RAG from scratch or use framework?
