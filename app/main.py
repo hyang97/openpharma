@@ -1,10 +1,11 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
-import ollama
-from typing import Optional
+from typing import Optional, List
 from .db.database import get_db
 from .logging_config import setup_logging, get_logger
+from .rag.generation import answer_query, RAGResponse
 
 # Configure logging on startup
 setup_logging(
@@ -15,6 +16,15 @@ setup_logging(
 logger = get_logger(__name__)
 
 app = FastAPI(title="OpenPharma API", version="0.1.0")
+
+# Configure CORS to allow requests from React frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # React dev server
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allow all headers
+)
 
 @app.on_event("startup")
 async def startup_event():
@@ -27,20 +37,16 @@ async def shutdown_event():
 
 class QuestionRequest(BaseModel):
     question: str
-    use_local: Optional[bool] = None # allows use_local (boolean type) to be optional parameter. default value is None, meaning "i don't care, use environment variable"
-
-class QuestionResponse(BaseModel):
-    answer: str
-    model_used: str
+    use_local: Optional[bool] = None
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "message": "OpenPharma API is running"}
 
-@app.post("/ask", response_model=QuestionResponse)
+@app.post("/ask", response_model=RAGResponse)
 async def ask_question(request: QuestionRequest):
-    """Ask a question and get an AI response"""
+    """Ask a question and get a RAG-powered AI response with citations"""
 
     # Determine which model to use
     use_local = request.use_local if request.use_local is not None else os.getenv("USE_LOCAL_LLM", default="true").lower() == "true"
@@ -49,25 +55,12 @@ async def ask_question(request: QuestionRequest):
     logger.debug(f"Using local model: {use_local}")
 
     try:
-        if use_local:
-            # Use local Ollama
-            client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", default="http://localhost:11434"))
-            response = client.chat(
-                model='llama3.1:8b',
-                messages=[{
-                    'role': 'user',
-                    'content': f"You are a research assistant specializing in pharmaceutical and medical research. Please answer this question: {request.question}"
-                }]
-            )
-            answer = response['message']['content']
-            model_used = "llama3.1:8b (local)"
-            logger.info(f"Generated response using {model_used}")
-        else:
-            # TODO: Add OpenAI integration later
-            logger.warning("OpenAI integration requested but not implemented")
-            raise HTTPException(status_code=501, detail="OpenAI integration not yet implemented")
+        # Use RAG pipeline - returns RAGResponse directly
+        result = answer_query(query=request.question, use_local=use_local)
 
-        return QuestionResponse(answer=answer, model_used=model_used)
+        logger.info(f"Generated RAG response with {len(result.citations)} citations in {result.generation_time_ms:.0f}ms")
+
+        return result
 
     except Exception as e:
         logger.error(f"Error generating response: {str(e)}", exc_info=True)

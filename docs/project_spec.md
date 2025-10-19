@@ -16,7 +16,7 @@ OpenPharma is an AI-powered research & insights engine, providing life sciences 
 
 ### Core Offering
 OpenPharma is a conversational AI platform that allows users to:
-1. Quary and Synthesize Scientific Literature: Ask questions about drug efficiacy, safety, mechanisms of action, key opinion leaders, etc.
+1. Query and Synthesize Scientific Literature: Ask questions about drug efficiacy, safety, mechanisms of action, key opinion leaders, etc.
 2. Analyze the Clinical Trial Landscape: Investigate competitor trial stratgies, compare study designs, and track development pipelines
 3. Connect Research to Commercial Strategy: Link insights across scientific discoveries, clinical trials, regulatory approvals, corporate financial disclosures, etc. to build a 360-degree view of the market.
 
@@ -108,7 +108,7 @@ To validate all Phase 1 use cases, these enhancements will be integrated into th
 #### System Architecture
 
 ```
-Streamlit (UI for testing)
+Next.js/React (UI)
     ↓
 FastAPI (REST API)
     ↓
@@ -125,7 +125,8 @@ Cloud Monitoring (observability)
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
 | **API Backend** | FastAPI | Industry standard for ML APIs, async support |
-| **UI** | Streamlit | Rapid prototyping, all-in-one Python |
+| **UI** | Next.js 15 + React + TypeScript | Production-ready, modern web stack |
+| **Styling** | Tailwind CSS | Rapid UI development, dark theme support |
 | **LLM** | Ollama Llama 3.1 8B / OpenAI GPT-4 | Local development / Demo quality (configurable) |
 | **Embeddings** | Ollama nomic-embed-text | 768 dims, self-hosted, $0 cost |
 | **Vector Store** | Local Postgres + pgvector | Simple, cost-effective, fully local development |
@@ -136,18 +137,30 @@ Cloud Monitoring (observability)
 | **Monitoring** | Cloud Monitoring | Built-in GCP, free tier sufficient |
 
 #### Key Features
-1. **Conversational RAG Interface**
+1. **React Chat Interface** *(Implemented)*
+   - Next.js 15 + TypeScript dark-themed UI
+   - Centered input on empty state (like OpenEvidence)
+   - Real-time loading indicators
+   - Clickable header to return home
+   - See `docs/ui_design.md` for complete design documentation
+
+2. **Conversational RAG Interface** *(Implemented)*
    - Natural language queries about research findings
    - Semantic search over research paper sections
-   - LLM synthesis with inline citations
+   - LLM synthesis with inline citations [1], [2], etc.
    - <30 second response time (p95)
+   - Multi-turn conversation support *(Planned Phase 1)*
+   - Query rewriting for better retrieval *(Planned Phase 1)*
 
-2. **Verifiable Citations**
-   - Every claim linked to source paper (PMID)
-   - Click-through to PubMed Central
-   - 95%+ citation accuracy
+3. **Verifiable Citations** *(Implemented)*
+   - Every claim linked to source paper with sequential numbering
+   - Citation cards showing journal, PMC ID, paper title
+   - Click-through to PubMed Central *(Planned Phase 1)*
+   - Copy message to clipboard *(Planned Phase 1)*
+   - Regenerate response button *(Planned Phase 1)*
+   - 95%+ citation accuracy target
 
-3. **4-Phase Decoupled Ingestion Pipeline**
+4. **4-Phase Decoupled Ingestion Pipeline**
    - Phase 1: Collect PMC IDs from PubMed searches
    - Phase 2: Fetch and parse full-text papers
    - Phase 3: Token-based chunking (512 tokens, 50-token overlap) with section-aware processing
@@ -155,7 +168,7 @@ Cloud Monitoring (observability)
    - Each phase is independently resumable and stores persistent state
    - See `docs/ingestion_pipeline.md` for complete architecture
 
-4. **Evaluation & Quality Assurance**
+5. **Evaluation & Quality Assurance**
    - RAGAS evaluation framework (faithfulness, answer relevancy, context recall)
    - Citation accuracy measurement and tracking
    - Response quality metrics and automated testing

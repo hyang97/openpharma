@@ -31,17 +31,28 @@ docker stop <container-name>      # Stop a specific container (e.g., api-fetch)
 ```
 
 ## Quick Start
+
+### Backend (FastAPI)
 ```bash
 # Interactive shell
 docker-compose exec api bash
 
 # Run a script directly
-docker-compose exec api python -m scripts.collect_pmc_ids --limit 50
+docker-compose exec api python -m scripts.stage_1_collect_ids --limit 50
 
 # Background job in separate container (for long-running tasks)
-docker-compose run --rm -d --name api-fetch api bash -c "python -m scripts.fetch_papers --limit 30000"
-docker-compose exec api-fetch tail -f logs/fetch_papers.log  # Monitor
+docker-compose run --rm -d --name api-fetch api bash -c "python -m scripts.stage_2_fetch_papers --limit 30000"
+docker-compose exec api-fetch tail -f logs/stage_2_fetch_papers.log  # Monitor
 docker stop api-fetch # Kill if needed
+```
+
+### Frontend (React)
+```bash
+cd ui
+npm install              # Install dependencies (first time only)
+npm run dev              # Start dev server at http://localhost:3000
+npm run build            # Build for production
+npm start                # Serve production build
 ```
 
 ## Database Operations
@@ -130,9 +141,14 @@ docker-compose exec postgres psql -U admin -d openpharma -c "SELECT COUNT(*) FRO
 docker-compose run --rm -d --name api-embed api bash -c "python -m scripts.stage_4_embed_chunks --workers 1"
 ```
 
-## Testing & Validation
+## Testing
 
 ```bash
-docker-compose exec api python -m tests.test_data_integrity           # Database health
-docker-compose exec api python -m tests.test_retrieval_quality        # End-to-end RAG quality
+# Run tests
+docker-compose exec api python -m tests.test_generation
+
+# Test API endpoint
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What is metformin?", "use_local": true}'
 ```
