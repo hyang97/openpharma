@@ -1,7 +1,6 @@
 export type Message = {
   role: string
   content: string
-  citations?: Citation[]
 }
 
 export type Citation = {
@@ -9,4 +8,11 @@ export type Citation = {
   title: string
   journal: string
   source_id: string
+}
+
+export type ConversationSummary = {
+  conversation_id: string
+  first_message: string
+  message_count: number
+  last_updated: string
 }
