@@ -134,10 +134,66 @@ for citation in result.citations:
 # [3] Lee et al. 2023, "Cardiovascular Safety" (PMC11111)
 ```
 
+## 3. Multi-Turn Conversations (Phase 1 - In Progress)
+
+### Ollama KV Cache and Conversation Support
+
+**How Ollama handles multi-turn conversations:**
+- Ollama automatically reuses KV cache based on **prompt prefix matching**
+- No explicit session management needed - just send full message history
+- If messages array starts with previously seen messages, KV cache is reused
+- Only new tokens at the end require computation
+
+**Implementation approach:**
+```python
+# Request 1
+messages = [
+    {'role': 'user', 'content': 'What is metformin?'}
+]
+# Ollama computes and caches KV
+
+# Request 2 (follow-up)
+messages = [
+    {'role': 'user', 'content': 'What is metformin?'},
+    {'role': 'assistant', 'content': '...previous response...'},
+    {'role': 'user', 'content': 'What about side effects?'}
+]
+# Ollama sees prefix matches → reuses cached KV
+# Only computes new tokens for "What about side effects?"
+```
+
+**Our implementation (Phase 1):**
+1. **Conversation Manager** (`app/rag/conversation_manager.py`)
+   - Store conversations in-memory dict (keyed by conversation_id)
+   - Manage message history (user/assistant turns)
+   - Clean up old conversations after timeout
+
+2. **Updated `/ask` endpoint** (`app/main.py`)
+   - Accept optional `conversation_id` in request
+   - Retrieve conversation history from manager
+   - Append new user message
+   - Pass full messages array to Ollama
+   - Store assistant response
+   - Set `keep_alive=-1` to keep model loaded
+
+3. **No stateful sessions with Ollama needed**
+   - Backend manages conversation state
+   - Ollama automatically optimizes via KV cache reuse
+
+**Performance benefits:**
+- Without cache reuse: ~2-5s per turn (reprocesses everything)
+- With cache reuse: ~0.5-2s per turn (only new tokens)
+
+**Limitations:**
+- KV cache reuse may not work with sliding window attention models (e.g., Gemma 3)
+- Works well with Llama 3.1 (our current model)
+
 ## Future Enhancements
 
-**Phase 1 improvements:**
-- Citation accuracy verification (post-process to check claims match chunks)
+**Phase 1 improvements (Current):**
+- ✅ Multi-turn conversation support with KV cache optimization
+- ⏳ Query rewriting for follow-up questions ("What about side effects?" → "What are the side effects of metformin?")
+- ⏳ Citation accuracy verification (post-process to check claims match chunks)
 - Structured output (JSON) to enforce citation format
 - Query expansion (synonyms, related terms)
 - Reranking (MMR for diversity, section weighting)
@@ -146,7 +202,7 @@ for citation in result.citations:
 **Phase 2 improvements:**
 - Multi-step reasoning with LangGraph
 - Cross-domain queries (clinical trials + research papers)
-- Conversation history and follow-up questions
+- Persistent conversation storage (database instead of in-memory)
 - Streaming responses for better UX
 
 ## Related Documentation

@@ -1,13 +1,14 @@
 # OpenPharma TODO List
 
-Last updated: 2025-10-17
+Last updated: 2025-10-19
 
 ## Current Sprint: Build RAG Query Interface
 
 ### Active Tasks
 - [x] Implement semantic search retrieval (top-K similarity search)
-- [ ] Build LLM generation with citation tracking (scaffolding complete, ready to implement)
-- [ ] Create Streamlit conversational interface
+- [x] Build LLM generation with citation tracking
+- [x] Implement multi-turn conversation support with conversation-wide citation numbering
+- [x] Create Next.js conversational UI with collapsible sidebar
 - [ ] Set up RAGAS evaluation framework
 
 **CRITICAL: Ollama Version Requirement**

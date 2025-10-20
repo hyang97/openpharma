@@ -1,4 +1,3 @@
-import { CitationList } from './CitationList'
 import { Message } from '@/types/message'
 
 type MessageBubbleProps = {
@@ -21,11 +20,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         <div className={`text-base leading-relaxed whitespace-pre-wrap ${isUser ? 'text-white' : 'text-slate-100'}`}>
           {message.content}
         </div>
-
-        {/* Show citations if assistant response */}
-        {message.role === 'assistant' && message.citations && (
-          <CitationList citations={message.citations} />
-        )}
       </div>
     </div>
   )

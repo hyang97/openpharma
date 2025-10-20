@@ -31,55 +31,46 @@ class Citation:
 @dataclass
 class RAGResponse:
     """Complete answer with citations and metadata."""
-    query: str
-    answer: str  # Synthesized response with inline citations [1], [2]
-    citations: List[Citation]
+    user_message: str
+    generated_response: str
+    response_citations: List[Citation]  # Citations that appear in this specific response
     chunks_used: List[SearchResult]
     llm_provider: str
     generation_time_ms: float
+    conversation_id: str
 
-def extract_and_renumber_citations(answer_text: str, chunks: List[SearchResult]) -> tuple[str, List[Citation]]:
+def extract_citations_with_pmc_ids(answer_text: str, chunks: List[SearchResult]) -> tuple[str, List[Citation]]:
     """
-    Extract PMC citations from LLM response and renumber sequentially as [1], [2], etc.
-    
+    Extract PMC citations from LLM response, keeping [PMC...] citation format at this stage.
+
     Returns:
-        Tuple of (renumbered answer_text, citations_list)
+        Tuple of (answer_text with [PMC...], citations_list with number=0 as placeholder)
     """
-    # Find all PMC IDs in order of appearance (handles both [PMC123] and [PMC123, PMC456])
-    # First find all bracketed content, then extract PMC IDs from each
+    # Find all PMC IDs in order of appearance
     cited_pmcs = []
     bracket_contents = re.findall(r'\[([^\]]+)\]', answer_text)
     for content in bracket_contents:
-        # Extract all PMC IDs from this bracket group
         pmcs = re.findall(r'PMC(\d+)', content)
         cited_pmcs.extend(pmcs)
 
     # Get unique PMC IDs, preserving order
-    seen = set() # unique check
-    unique_pmcs = [] # PMC IDs in order
+    seen = set()
+    unique_pmcs = []
     for pmc_id in cited_pmcs:
         if pmc_id not in seen:
             seen.add(pmc_id)
             unique_pmcs.append(pmc_id)
 
-    # Build chunk lookup (source_id : chunk)
+    # Build chunk lookup
     chunk_map = {chunk.source_id: chunk for chunk in chunks}
 
-    # Replace PMC IDs with sequential numbers in answer text, build citation objects
-    renumbered_answer_text = answer_text
+    # Build citation objects (number will be assigned later in endpoint)
     citations = []
-
-    for new_num, pmc_id in enumerate(unique_pmcs, 1):
-        # Replace PMC ID wherever it appears (handles both [PMC123] and [PMC123, PMC456])
-        renumbered_answer_text = renumbered_answer_text.replace(
-            f'PMC{pmc_id}',
-            f'{new_num}'
-        )
-
+    for pmc_id in unique_pmcs:
         chunk = chunk_map.get(pmc_id)
         if chunk:
             citations.append(Citation(
-                number=new_num,
+                number=0,  # Placeholder, will be assigned by conversation manager
                 title=chunk.title,
                 journal=chunk.journal,
                 source_id=pmc_id,
@@ -87,12 +78,14 @@ def extract_and_renumber_citations(answer_text: str, chunks: List[SearchResult])
                 publication_date=chunk.publication_date,
                 chunk_id=chunk.chunk_id
             ))
-    return renumbered_answer_text, citations
 
-def build_prompt(query: str, chunks: list[SearchResult], top_n: int) -> str:
-    """Build RAG prompt with query, context, and literature chunks."""
-    
-    prompt = f"""
+    # Return answer text unchanged (still has [PMC...] format)
+    return answer_text, citations
+
+def build_messages(user_message: str, chunks: list[SearchResult], top_n: int, conversation_history: Optional[List[dict]]) -> List[dict]:
+    """Build RAG prompt with user message, context, and literature chunks."""
+
+    SYSTEM_PROMPT = """
 <Task Context>
 This is the generation step of a retrieval-augmented generation (RAG) workflow that powers OpenPharma, an AI-powered research & insights product. 
 Users can ask questions in natural language and receive instant answers, transforming a multi-day research process into a matter of minutes in a chat-based interface.
@@ -129,64 +122,71 @@ CRITICAL: Do NOT include a separate references section or bibliography.
 References:
 [PMC12345678] ...
 [PMC12345678] ..."
-</Incorrect Examples>
-
-<Literature>
-Below are the top {top_n} most relevant literature passages to the user's query. Each passage starts with a unique [source_id]."
+</Incorrect Examples>"
 """
+    messages = []
+    messages.append({'role': 'system', 'content': SYSTEM_PROMPT})
+    if conversation_history:
+        messages.extend(conversation_history)
+
+    current_message = f"<Literature>\nBelow are the top {top_n} most relevant literature passages to the user's query. Each passage starts with a unique [source_id].\n"
     # Use top n chunks in context, no re-ranking
     # Add to prompt with numbered chunks, formatted for inline citations [x]
-    literature_str = ""
+    
     for idx, chunk in enumerate(chunks[:top_n], 1):
         # Strip citation markers [1], [2, 3], etc. from original paper text
         cleaned_content = re.sub(r'\[\d+(?:,\s*\d+)*\]', '', chunk.content)
-        literature_str += f"[PMC{chunk.source_id}] Title: {chunk.title} | {cleaned_content} | Journal: {chunk.journal}\n"
+        current_message += f"[PMC{chunk.source_id}] Title: {chunk.title} | {cleaned_content} | Journal: {chunk.journal}\n"
 
-    prompt += literature_str
-    prompt += f"</Literature>\nUser Query: {query}"
+    current_message += f"</Literature>\nUser Query: {user_message}"
 
-    return prompt
+    messages.append({'role': 'user', 'content': current_message})
+
+    return messages
     
 
 
-def answer_query(
-    query: str,
+def generate_response(
+    user_message: str,
+    conversation_id: str,
     top_k: int = 20,
     top_n: int = 5,
-    use_local: bool = True
+    use_local: bool = True,
+    conversation_history: Optional[List[dict]] = None
 ) -> RAGResponse:
     """
-    Answer a question using RAG (retrieval + LLM generation).
+    Generate a response using RAG (retrieval + LLM generation).
 
     Args:
-        query: Natural language question
+        user_message: Natural language question from user
+        conversation_id: Unique conversation identifier
         top_k: Number of chunks to retrieve (default: 20)
         top_n: Number of chunks to use in generation (default: 5)
         use_local: Use Ollama if True, OpenAI if False (default: True)
+        conversation_history: Previous messages for multi-turn conversations
 
     Returns:
-        RAGResponse with synthesized answer and citations
+        RAGResponse with synthesized response and citations
     """
     start_time = time.time()
 
     # Fetch top k chunks and build prompt
-    chunks = semantic_search(query, top_k=top_k)
-    prompt = build_prompt(query, chunks, top_n=top_n)
+    chunks = semantic_search(user_message, top_k=top_k)
 
-    logger.debug(f"Prompt:\n{prompt}\n")
+    # Build messages array for multi-turn chat
+    messages = build_messages(user_message, chunks, top_n=top_n, conversation_history=conversation_history)
+    logger.debug(f"Messages:\n{messages}\n")
 
     # Call LLM
-    try: 
+    try:
         if use_local:
             client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", default="http://localhost:11434"))
             response = client.chat(
                 model='llama3.1:8b',
-                messages=[{
-                    'role': 'user',
-                    'content': prompt
-                }]
+                messages=messages,
+                options={'keep_alive': -1}
             )
-            answer, citations = extract_and_renumber_citations(response['message']['content'], chunks=chunks[:top_n])
+            generated_response, citations = extract_citations_with_pmc_ids(response['message']['content'], chunks=chunks[:top_n])
         else:
             # TODO: Add OpenAI integration later
             logger.warning("OpenAI integration requested but not implemented")
@@ -197,12 +197,13 @@ def answer_query(
 
 
     return RAGResponse(
-        query=query,
-        answer=answer,
-        citations=citations,
+        user_message=user_message,
+        generated_response=generated_response,
+        response_citations=citations,
         chunks_used=chunks[:top_n],
         llm_provider="ollama" if use_local else "openai",
-        generation_time_ms=(time.time() - start_time) * 1000
+        generation_time_ms=(time.time() - start_time) * 1000,
+        conversation_id=conversation_id
     )
 
 if __name__ == "__main__":
@@ -213,14 +214,14 @@ if __name__ == "__main__":
         log_file="logs/openpharma.log"
     )
 
-    # Simple test
-    result = answer_query("What are amylins used for in diabetes treatment?")
-    # result = answer_query("What are GLP-1 agonists used for in diabetes treatment?")
+    # Simple test (note: requires conversation_id parameter now)
+    # result = generate_response("What are amylins used for in diabetes treatment?", conversation_id="test-123")
+    # print(f"User message: {result.user_message}\n")
+    # print(f"Generated response:\n{result.generated_response}\n")
+    # print(f"Citations:")
+    # for citation in result.citations:
+    #     print(f"  [{citation.number}] {citation.title} (PMC{citation.source_id})")
+    # print(f"\nGeneration time: {result.generation_time_ms:.0f}ms")
+    # print(f"LLM provider: {result.llm_provider}")
 
-    print(f"Query: {result.query}\n")
-    print(f"Answer:\n{result.answer}\n")
-    print(f"Citations:")
-    for citation in result.citations:
-        print(f"  [{citation.number}] {citation.title} (PMC{citation.source_id})")
-    print(f"\nGeneration time: {result.generation_time_ms:.0f}ms")
-    print(f"LLM provider: {result.llm_provider}")
+    print("Note: Run tests via /ask endpoint or update this test code with conversation_id")
