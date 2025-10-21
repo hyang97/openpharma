@@ -8,9 +8,13 @@ from dataclasses import dataclass
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+import time
 
 from app.db.database import engine
 from app.ingestion.embeddings import EmbeddingService
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Cache EmbeddingService instance to avoid repeated initialization overhead
 _embedding_service = None
@@ -60,9 +64,13 @@ def semantic_search(query: str, top_k: int = 10) -> List[SearchResult]:
         _embedding_service = EmbeddingService()
 
     # Embed query
+    embed_start = time.time()
     query_embedding = _embedding_service.embed_single(query)
+    embed_time = (time.time() - embed_start) * 1000
+    logger.info(f"  Query embedding time: {embed_time:.0f}ms")
 
     # Execute vector similarity search with SQL
+    search_start = time.time()
     stmt = text(
         """
 select
@@ -88,6 +96,9 @@ limit :top_k
             'query_vector': str(query_embedding),
             'top_k': top_k
         }).fetchall()
+
+    search_time = (time.time() - search_start) * 1000
+    logger.info(f"  Vector search time: {search_time:.0f}ms")
 
     # Parse results and construct SearchResult objects
     search_results = []

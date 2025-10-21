@@ -38,3 +38,10 @@ Key technical decisions made during OpenPharma development.
 **Decision**: Create once at module level, reuse for all queries.
 **Why**: Stateless service with minimal memory, no persistent connections.
 **Tradeoff**: Lives for application lifetime, slightly harder to unit test.
+
+## 2025-10-21: Store PMC IDs internally, renumber only for display
+**Problem**: Multi-turn conversations broke when LLM saw previous responses with numbered citations [1], [2] instead of [PMC...] format.
+**Decision**: Store messages with original [PMC...] format in conversation history, only renumber to [1], [2] when sending to frontend.
+**Why**: Keeps LLM prompts consistent (always uses PMC IDs), prevents confusion in follow-up responses, separates storage from display concerns.
+**Implementation**: `generation.py` returns [PMC...], `main.py` stores [PMC...], `renumber_text_for_display()` converts to [1], [2] only for API responses.
+**Tradeoff**: Slight overhead from renumbering on every request, but negligible compared to LLM generation time.

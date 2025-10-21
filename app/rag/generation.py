@@ -16,6 +16,9 @@ from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Model configuration - change this to experiment with different models
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+
 @dataclass
 class Citation:
     """A single citation reference."""
@@ -108,9 +111,10 @@ You will respond concisely, summarizing the main answer, and providing supportin
 If there is insufficient information, your response must be **No sufficient evidence**
 Your response must include only the response to the user's message.
 Your answer must be based exclusively on the content provided in <Literature>.
+Your answer must start with ## Answer
+Your references section must start with ## References
 CRITICAL: You MUST cite sources using their EXACT [PMC...] identifiers from <Literature> inline in your answer text.
 CRITICAL: Do NOT use numbered citations like [1], [2], [3]. ONLY use [PMCxxxxxx] format.
-CRITICAL: Do NOT include a separate references section or bibliography.
 
 <Correct Examples>
 "GLP-1 agonists improve glycemic control [PMC12345678] and reduce cardiovascular risk [PMC87654321]."
@@ -170,8 +174,11 @@ def generate_response(
     """
     start_time = time.time()
 
-    # Fetch top k chunks and build prompt
+    # Fetch top k chunks
+    retrieval_start = time.time()
     chunks = semantic_search(user_message, top_k=top_k)
+    retrieval_time = (time.time() - retrieval_start) * 1000
+    logger.info(f"Retrieval time: {retrieval_time:.0f}ms")
 
     # Build messages array for multi-turn chat
     messages = build_messages(user_message, chunks, top_n=top_n, conversation_history=conversation_history)
@@ -180,12 +187,17 @@ def generate_response(
     # Call LLM
     try:
         if use_local:
+            llm_start = time.time()
+            logger.info(f"Using model: {OLLAMA_MODEL}")
             client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", default="http://localhost:11434"))
             response = client.chat(
-                model='llama3.1:8b',
+                model=OLLAMA_MODEL,
                 messages=messages,
                 options={'keep_alive': -1}
             )
+            llm_time = (time.time() - llm_start) * 1000
+            logger.info(f"LLM generation time: {llm_time:.0f}ms")
+
             generated_response, citations = extract_citations_with_pmc_ids(response['message']['content'], chunks=chunks[:top_n])
         else:
             # TODO: Add OpenAI integration later

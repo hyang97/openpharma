@@ -18,6 +18,7 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - USE_LOCAL_LLM=${USE_LOCAL_LLM}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - .:/app

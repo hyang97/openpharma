@@ -1,6 +1,6 @@
 # OpenPharma TODO List
 
-Last updated: 2025-10-19
+Last updated: 2025-10-21
 
 ## Current Sprint: Build RAG Query Interface
 
@@ -9,6 +9,9 @@ Last updated: 2025-10-19
 - [x] Build LLM generation with citation tracking
 - [x] Implement multi-turn conversation support with conversation-wide citation numbering
 - [x] Create Next.js conversational UI with collapsible sidebar
+- [x] Fix citation format consistency (store PMC IDs internally, renumber for display only)
+- [x] Add performance timing instrumentation
+- [ ] Optimize response time to < 30 seconds (current: 18-40s, bottleneck identified as LLM generation)
 - [ ] Set up RAGAS evaluation framework
 
 **CRITICAL: Ollama Version Requirement**
@@ -42,9 +45,12 @@ Last updated: 2025-10-19
 - [ ] Add monitoring dashboard
 
 ### Evaluation & Quality
+- [ ] **PRIORITY: Optimize response time to < 30 seconds**
+  - Current: 18-40s total (LLM generation: 18-40s, Retrieval: ~200ms)
+  - Bottleneck identified: LLM inference time (97% of total)
+  - Options: Reduce top_n chunks, try smaller models (phi4-mini, llama3.2:3b), or accept current performance
 - [ ] Implement RAGAS evaluation framework
 - [ ] Measure citation accuracy (95%+ target)
-- [ ] Test response time (<30 seconds target)
 
 ---
 
