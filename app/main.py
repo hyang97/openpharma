@@ -58,32 +58,80 @@ class ChatResponse(BaseModel):
     generation_time_ms: float
     conversation_id: str
 
-def renumber_and_store_citations_for_conversation(result: RAGResponse, conversation_id: str) -> RAGResponse:
+def renumber_text_for_display(text: str, conversation_id: str) -> str:
     """
-    Renumber citations in RAGResponse and store citations to use conversation-wide.
+    Replace [PMC...] citations with conversation-wide numbers [1], [2], etc. for frontend display.
 
     Args:
-        result: RAGResponse with [PMC...] format in generated_response
+        text: Text with [PMC...] format citations
+        conversation_id: Conversation identifier to get citation mapping
+
+    Returns:
+        Text with [1], [2], etc. format
+    """
+    # Get all citations for this conversation
+    all_citations = conversation_manager.get_all_citations(conversation_id)
+
+    # Build mapping: PMC ID -> citation number
+    pmc_to_number = {cit.source_id: cit.number for cit in all_citations}
+
+    # Replace all [\s*PMCxxxx\s*] with [number] using regex
+    renumbered_text = text
+    for source_id, number in pmc_to_number.items():
+        # Pattern matches [ PMC123 ], [  PMC123], [PMC123 ], [PMC123], etc.
+        pattern = r'\[\s*PMC' + source_id + r'\s*\]'
+        renumbered_text = re.sub(pattern, f'[{number}]', renumbered_text)
+
+    return renumbered_text
+
+
+def renumber_messages_for_display(messages: List[dict], conversation_id: str) -> List[dict]:
+    """
+    Renumber all messages for frontend display (converts [PMC...] to [1], [2], etc.).
+
+    Args:
+        messages: List of message dicts with 'role' and 'content'
         conversation_id: Conversation identifier
 
     Returns:
-        Updated generated_response text with [1], [2], etc. format
+        New list of messages with renumbered citations
     """
-    renumbered_response = result.generated_response
+    # Fetch citation mapping once for efficiency
+    all_citations = conversation_manager.get_all_citations(conversation_id)
+    pmc_to_number = {cit.source_id: cit.number for cit in all_citations}
 
-    # Update citation numbers and replace PMC IDs in generated response text
+    renumbered_messages = []
+    for msg in messages:
+        if msg['role'] == 'assistant':
+            # Replace all [PMCxxxx] with [number] in this message
+            renumbered_content = msg['content']
+            for source_id, number in pmc_to_number.items():
+                renumbered_content = renumbered_content.replace(f'PMC{source_id}', str(number))
+
+            renumbered_messages.append({
+                'role': msg['role'],
+                'content': renumbered_content
+            })
+        else:
+            # User messages don't need renumbering
+            renumbered_messages.append(msg)
+
+    return renumbered_messages
+
+
+def store_citations_from_response(result: RAGResponse, conversation_id: str) -> None:
+    """
+    Store citations from RAGResponse in conversation manager.
+
+    Args:
+        result: RAGResponse with citations to store
+        conversation_id: Conversation identifier
+    """
     for response_citation in result.response_citations:
-        # Get or store citation, returning conversation-wide number
+        # Store citation and get conversation-wide number
         convo_citation_num = conversation_manager.get_or_store_citation(conversation_id, citation=response_citation)
-
-        # Update citation object
+        # Update citation object with assigned number
         response_citation.number = convo_citation_num
-
-        # Replace [PMC...] with [num] in response text
-        renumbered_response = renumbered_response.replace(f'PMC{response_citation.source_id}', f'{convo_citation_num}')
-
-    result.generated_response = renumbered_response
-    return result
 
 
 
@@ -119,13 +167,16 @@ async def get_conversation_detail(conversation_id: str):
     # Get first user message
     first_message = next((m["content"] for m in c.messages if m["role"] == "user"), "")
 
+    # Renumber messages for frontend display
+    display_messages = renumber_messages_for_display(c.messages, conversation_id)
+
     # Build and return the response
     return ConversationDetailResponse(
         conversation_id=conversation_id,
         first_message=first_message[:100],
         message_count=len(c.messages),
         last_updated=c.last_accessed,
-        messages=c.messages,
+        messages=display_messages,
         citations=citations
     )
 
@@ -157,22 +208,25 @@ async def send_message(request: UserRequest):
         # Use RAG pipeline - returns RAGResponse with [PMC...] format
         result = generate_response(user_message=request.user_message, conversation_id=conversation_id, use_local=use_local, conversation_history=conversation_history)
 
-        # Renumber citations using conversation-wide numbering and update RAGResponse
-        result = renumber_and_store_citations_for_conversation(result, conversation_id)
+        # Store citations from response (assigns conversation-wide numbers)
+        store_citations_from_response(result, conversation_id)
 
-        # Add user message and assistant response to conversation
+        # Store messages with ORIGINAL [PMC...] format for LLM context
         conversation_manager.add_message(conversation_id, "user", request.user_message)
         conversation_manager.add_message(conversation_id, "assistant", result.generated_response)
 
         # Get all conversation-wide citations
         conversation_citations = conversation_manager.get_all_citations(conversation_id)
 
+        # Renumber response text for frontend display only
+        display_response = renumber_text_for_display(result.generated_response, conversation_id)
+
         logger.info(f"Generated RAG response with {len(result.response_citations)} citations in {result.generation_time_ms:.0f}ms")
 
-        # Return ChatResponse with both response and conversation-wide citations
+        # Return ChatResponse with renumbered text for display
         return ChatResponse(
             user_message=result.user_message,
-            generated_response=result.generated_response,
+            generated_response=display_response,
             response_citations=result.response_citations,
             conversation_citations=conversation_citations,
             llm_provider=result.llm_provider,
