@@ -4,10 +4,12 @@ from pydantic import BaseModel
 import os
 import re
 from typing import Optional, List
-from .db.database import get_db
-from .logging_config import setup_logging, get_logger
-from .rag.generation import generate_response, RAGResponse, Citation
-from .rag.conversation_manager import ConversationManager
+
+from app.models import Citation, RAGResponse
+from app.db.database import get_db
+from app.logging_config import setup_logging, get_logger
+from app.rag.generation import generate_response
+from app.rag.conversation_manager import ConversationManager
 
 # Initialize conversation manager on startup
 conversation_manager = ConversationManager(max_age_seconds=3600)
@@ -58,80 +60,108 @@ class ChatResponse(BaseModel):
     generation_time_ms: float
     conversation_id: str
 
-def renumber_text_for_display(text: str, conversation_id: str) -> str:
+def prepare_messages_for_display(messages: List[dict], conversation_id: str) -> List[dict]:
     """
-    Replace [PMC...] citations with conversation-wide numbers [1], [2], etc. for frontend display.
-
-    Args:
-        text: Text with [PMC...] format citations
-        conversation_id: Conversation identifier to get citation mapping
-
-    Returns:
-        Text with [1], [2], etc. format
-    """
-    # Get all citations for this conversation
-    all_citations = conversation_manager.get_all_citations(conversation_id)
-
-    # Build mapping: PMC ID -> citation number
-    pmc_to_number = {cit.source_id: cit.number for cit in all_citations}
-
-    # Replace all [\s*PMCxxxx\s*] with [number] using regex
-    renumbered_text = text
-    for source_id, number in pmc_to_number.items():
-        # Pattern matches [ PMC123 ], [  PMC123], [PMC123 ], [PMC123], etc.
-        pattern = r'\[\s*PMC' + source_id + r'\s*\]'
-        renumbered_text = re.sub(pattern, f'[{number}]', renumbered_text)
-
-    return renumbered_text
-
-
-def renumber_messages_for_display(messages: List[dict], conversation_id: str) -> List[dict]:
-    """
-    Renumber all messages for frontend display (converts [PMC...] to [1], [2], etc.).
-
-    Args:
-        messages: List of message dicts with 'role' and 'content'
-        conversation_id: Conversation identifier
-
-    Returns:
-        New list of messages with renumbered citations
+    Prepare messages for frontend: strip headings, renumber citations [PMCxxxx] -> [1].
     """
     # Fetch citation mapping once for efficiency
     all_citations = conversation_manager.get_all_citations(conversation_id)
     pmc_to_number = {cit.source_id: cit.number for cit in all_citations}
 
-    renumbered_messages = []
+    prepared_messages = []
     for msg in messages:
         if msg['role'] == 'assistant':
-            # Replace all [PMCxxxx] with [number] in this message
-            renumbered_content = msg['content']
-            for source_id, number in pmc_to_number.items():
-                renumbered_content = renumbered_content.replace(f'PMC{source_id}', str(number))
+            content = msg['content']
 
-            renumbered_messages.append({
+            # Strip "## Answer" heading if present (case-insensitive)
+            # Matches: "## Answer", "##Answer", "## Answer:", "## Answer :", etc.
+            # \s* allows any whitespace between ## and Answer
+            # :? allows optional colon after Answer
+            # [\s:]* captures any trailing whitespace or colons
+            # Must be at start of line (^) or start of string (\A)
+            content = re.sub(r'^##\s*Answer\s*:?\s*\n?', '', content.strip(), flags=re.IGNORECASE | re.MULTILINE)
+
+            # Strip leading colons and whitespace (artifact from heading removal)
+            content = content.lstrip(': \t\n')
+
+            # Strip "## References" section and everything after it (case-insensitive)
+            # Matches multiple formats:
+            # - "## References"
+            # - "##References"
+            # - "## References:"
+            # - "References:"
+            # - "**References**" (bold markdown)
+            # .*$ captures everything from the heading to end of text
+            content = re.sub(
+                r'(?:^|\n)\s*(?:##\s*References|References\s*:|[\*]{2}References[\*]{2})\s*:?\s*.*$',
+                '',
+                content,
+                flags=re.IGNORECASE | re.DOTALL | re.MULTILINE
+            )
+
+            # Strip trailing whitespace
+            content = content.rstrip()
+
+            # Replace all [PMCxxxx] with [number]
+            # Supports both single citations [PMC123] and comma-separated [PMC123, PMC456]
+            for source_id, number in pmc_to_number.items():
+                # Pattern matches:
+                # - [PMC123] -> [1]
+                # - [PMC123, PMC456] -> [1, 2] (when both are replaced)
+                # - [ PMC123 ] -> [1] (with whitespace)
+                # - [PMC123,PMC456] -> [1,2] (no space after comma)
+                # Uses lookahead to match PMC ID followed by comma, space, or closing bracket
+                pattern = r'PMC' + source_id + r'(?=\s*[,\]])'
+                content = re.sub(pattern, str(number), content)
+
+            prepared_messages.append({
                 'role': msg['role'],
-                'content': renumbered_content
+                'content': content
             })
         else:
-            # User messages don't need renumbering
-            renumbered_messages.append(msg)
+            # User messages pass through unchanged
+            prepared_messages.append(msg)
 
-    return renumbered_messages
+    return prepared_messages
 
 
-def store_citations_from_response(result: RAGResponse, conversation_id: str) -> None:
+def extract_and_store_citations(result: RAGResponse, conversation_id: str) -> List[Citation]:
     """
-    Store citations from RAGResponse in conversation manager.
-
-    Args:
-        result: RAGResponse with citations to store
-        conversation_id: Conversation identifier
+    Extracts [PMCxxxxx] citations from generated_response text, builds Citation
+    objects, assigns conversation-wide numbers and store in conversation manager.
     """
-    for response_citation in result.response_citations:
-        # Store citation and get conversation-wide number
-        convo_citation_num = conversation_manager.get_or_store_citation(conversation_id, citation=response_citation)
-        # Update citation object with assigned number
-        response_citation.number = convo_citation_num
+    # Extract all PMC IDs from brackets in response text
+    cited_pmc_ids = []
+    bracket_contents = re.findall(r'\[([^\]]+)\]', result.generated_response)
+    for content in bracket_contents:
+        # Extract PMC IDs, handling formats [PMC123], [PMC123, PMC456], [ PMC123 ], [PMC123,PMC456]
+        pmcs = re.findall(r'PMC(\d+)', content)
+        cited_pmc_ids.extend(pmcs)
+
+    # Get unique PMC IDs, preserving order of first appearance
+    seen = set()
+    unique_pmc_ids = []
+    for pmc_id in cited_pmc_ids:
+        if pmc_id not in seen:
+            seen.add(pmc_id)
+            unique_pmc_ids.append(pmc_id)
+
+    # Build lookup map: source_id -> SearchResult
+    chunk_map = {chunk.source_id: chunk for chunk in result.prompt_literature_chunks}
+
+    # Build Citation objects via ConversationManager
+    numbered_citations = []
+    for pmc_id in unique_pmc_ids:
+        chunk = chunk_map.get(pmc_id)
+        if chunk:
+            # Let ConversationManager create/retrieve Citation with proper number
+            citation = conversation_manager.get_or_create_citation(
+                conversation_id=conversation_id,
+                chunk=chunk
+            )
+            numbered_citations.append(citation)
+
+    return numbered_citations
 
 
 
@@ -167,8 +197,8 @@ async def get_conversation_detail(conversation_id: str):
     # Get first user message
     first_message = next((m["content"] for m in c.messages if m["role"] == "user"), "")
 
-    # Renumber messages for frontend display
-    display_messages = renumber_messages_for_display(c.messages, conversation_id)
+    # Prepare messages for frontend display
+    display_messages = prepare_messages_for_display(c.messages, conversation_id)
 
     # Build and return the response
     return ConversationDetailResponse(
@@ -208,26 +238,35 @@ async def send_message(request: UserRequest):
         # Use RAG pipeline - returns RAGResponse with [PMC...] format
         result = generate_response(user_message=request.user_message, conversation_id=conversation_id, use_local=use_local, conversation_history=conversation_history)
 
-        # Store citations from response (assigns conversation-wide numbers)
-        store_citations_from_response(result, conversation_id)
+        # Extract and store citations from response (assigns conversation-wide numbers)
+        numbered_response_citations = extract_and_store_citations(result, conversation_id)
 
         # Store messages with ORIGINAL [PMC...] format for LLM context
         conversation_manager.add_message(conversation_id, "user", request.user_message)
-        conversation_manager.add_message(conversation_id, "assistant", result.generated_response)
+        conversation_manager.add_message(
+            conversation_id,
+            "assistant",
+            result.generated_response,
+            cited_source_ids=[cit.source_id for cit in numbered_response_citations], 
+            cited_chunk_ids=[cit.chunk_id for cit in numbered_response_citations]
+        )
 
         # Get all conversation-wide citations
         conversation_citations = conversation_manager.get_all_citations(conversation_id)
 
-        # Renumber response text for frontend display only
-        display_response = renumber_text_for_display(result.generated_response, conversation_id)
+        # Prepare response text for frontend display only (wrap in list for single message)
+        display_response = prepare_messages_for_display(
+            [{'role': 'assistant', 'content': result.generated_response}],
+            conversation_id
+        )[0]['content']
 
-        logger.info(f"Generated RAG response with {len(result.response_citations)} citations in {result.generation_time_ms:.0f}ms")
+        logger.info(f"Generated RAG response with {len(numbered_response_citations)} citations in {result.generation_time_ms:.0f}ms")
 
         # Return ChatResponse with renumbered text for display
         return ChatResponse(
             user_message=result.user_message,
             generated_response=display_response,
-            response_citations=result.response_citations,
+            response_citations=numbered_response_citations,  # Use numbered citations
             conversation_citations=conversation_citations,
             llm_provider=result.llm_provider,
             generation_time_ms=result.generation_time_ms,

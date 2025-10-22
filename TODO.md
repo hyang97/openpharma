@@ -1,6 +1,6 @@
 # OpenPharma TODO List
 
-Last updated: 2025-10-21
+Last updated: 2025-10-22
 
 ## Current Sprint: Build RAG Query Interface
 
@@ -11,6 +11,9 @@ Last updated: 2025-10-21
 - [x] Create Next.js conversational UI with collapsible sidebar
 - [x] Fix citation format consistency (store PMC IDs internally, renumber for display only)
 - [x] Add performance timing instrumentation
+- [x] Refactor citation flow: immutable Citations, chunk-level tracking, centralized data models
+- [x] Implement hybrid retrieval (fresh semantic search + historical chunks from conversation)
+- [ ] Fix Turn 2 citation issue: Separate fresh and historical chunks in Literature prompt
 - [ ] Optimize response time to < 30 seconds (current: 18-40s, bottleneck identified as LLM generation)
 - [ ] Set up RAGAS evaluation framework
 
@@ -31,6 +34,11 @@ Last updated: 2025-10-21
 - [ ] Enhanced metadata extraction (author affiliations, MeSH terms)
 - [ ] Targeted topic expansion (Obesity, Cardiovascular Disease)
 - [ ] Landmark paper augmentation (highly-cited foundational papers)
+
+### UI/UX Enhancements
+- [ ] Add smooth slide-down animation for citation list expansion (currently instant)
+  - Add Tailwind animation classes to citations container
+  - Increase scroll delay from 100ms to ~350ms to match animation timing
 
 ### Phase 2 - Multi-Domain Intelligence
 - [ ] Add ClinicalTrials.gov integration

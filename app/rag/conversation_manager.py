@@ -4,21 +4,10 @@ Conversation Manager for OpenPharma RAG system.
 Manages multi-turn conversations with consistent citation numbering across turns.
 """
 from typing import Dict, List, Optional
-from dataclasses import dataclass, field
-from app.rag.generation import Citation
 import uuid
 import time
 
-
-@dataclass
-class Conversation:
-    """A single conversation with message history and citation tracking."""
-    conversation_id: str
-    messages: List[dict] = field(default_factory=list)  # [{"role": "user", "content": "..."}, ...]
-    citation_mapping: Dict[str, int] = field(default_factory=dict)  # source_id -> citation_number
-    conversation_citations: Dict[str, Citation] = field(default_factory=dict)  # source_id -> citation
-    created_at: float = field(default_factory=time.time)
-    last_accessed: float = field(default_factory=time.time)
+from app.models import Citation, Conversation, SearchResult
 
 
 class ConversationManager:
@@ -62,44 +51,68 @@ class ConversationManager:
         else:
             return self.conversations.get(conversation_id).messages
 
-    def add_message(self, conversation_id: str, role: str, content: str) -> None:
-        """Add message to conversation. Raises ValueError if conversation not found."""
-
+    def add_message(
+            self, 
+            conversation_id: str, 
+            role: str, 
+            content: str, 
+            cited_source_ids: Optional[List[str]] = None, 
+            cited_chunk_ids: Optional[List[int]] = None
+            ) -> None:
+        """Add message to conversation with optional citation tracking."""
         if conversation_id not in self.conversations:
             raise ValueError(f"Conversation {conversation_id} not found")
+
+        c = self.conversations.get(conversation_id)
+
+        message = {"role": role, "content": content}
+        if cited_source_ids is not None:
+            message["cited_source_ids"] = cited_source_ids
         
-        c = self.conversations.get(conversation_id)
-        c.messages.append({"role": role, "content": content})
+        if cited_chunk_ids is not None:
+            message["cited_chunk_ids"] = cited_chunk_ids
+
+        c.messages.append(message)
         c.last_accessed = time.time()
         self._run_cleanup_if_needed()
 
-    def get_or_store_citation(self, conversation_id: str, citation: Citation) -> int:
+    def get_or_create_citation(self, conversation_id: str, chunk: SearchResult) -> Citation:
         """
-        Get existing citation number or store new citation and assign next number.
-        Returns 1-indexed citation number.
-        Raises ValueError if conversation not found.
+        Get existing citation or create new one from SearchResult with assigned number.
         """
         if conversation_id not in self.conversations:
             raise ValueError(f"Conversation {conversation_id} not found")
 
         c = self.conversations.get(conversation_id)
         c.last_accessed = time.time()
-
         self._run_cleanup_if_needed()
 
-        source_id = citation.source_id
+        source_id = chunk.source_id
 
-        if source_id in c.citation_mapping:
-            return c.citation_mapping.get(source_id)
-        else:
-            next_number = len(c.citation_mapping) + 1
-            c.citation_mapping[source_id] = next_number
-            c.conversation_citations[source_id] = citation
-            return next_number
+        # If already exists, return existing Citation
+        if source_id in c.conversation_citations:
+            return c.conversation_citations[source_id]
+
+        # Create new citation with assigned number
+        next_number = len(c.citation_mapping) + 1
+        citation = Citation(
+            number=next_number,
+            source_id=source_id,
+            chunk_id=chunk.chunk_id,
+            title=chunk.title,
+            journal=chunk.journal or "",
+            authors=chunk.authors,
+            publication_date=chunk.publication_date
+        )
+
+        c.citation_mapping[source_id] = next_number
+        c.conversation_citations[source_id] = citation
+
+        return citation
 
 
     def get_citation_mapping(self, conversation_id: str) -> Dict[str, int]:
-        """Get PMC ID to citation number mapping. Returns empty dict if not found."""
+        """Get source_id -> number mapping."""
         if conversation_id not in self.conversations:
             return {}
         
@@ -108,7 +121,7 @@ class ConversationManager:
         return c.citation_mapping
     
     def get_all_citations(self, conversation_id: str) -> List[Citation]:
-        """Return all Citation objects. Returns empty dict if not found."""
+        """Return all Citation objects sorted by number."""
         if conversation_id not in self.conversations:
             return []
         
@@ -121,7 +134,7 @@ class ConversationManager:
         return all_citations
     
     def get_conversation_summaries(self) -> List[dict]:
-        """Get summaries of all conversations, sorted by last_updated (newest first)"""
+        """Get all conversation summaries sorted by most recent."""
         summaries = []
         for c_id, convo in self.conversations.items():
             # Extracts first user message, with empty string if does not exist
@@ -139,7 +152,7 @@ class ConversationManager:
         return summaries
 
     def cleanup_old_conversations(self) -> int:
-        """Remove conversations inactive beyond max_age_seconds. Returns count removed."""
+        """Remove stale conversations, return count removed."""
         current_time = time.time()
         to_remove = []
         for c_id, conversation in self.conversations.items():

@@ -3,7 +3,8 @@ Tests for ConversationManager and conversation-wide citation numbering.
 """
 import unittest
 import time
-from app.rag.conversation_manager import ConversationManager, Conversation
+from app.models import Citation, Conversation
+from app.rag.conversation_manager import ConversationManager
 
 
 class TestConversationManager(unittest.TestCase):
@@ -95,7 +96,7 @@ class TestConversationManager(unittest.TestCase):
         manager = ConversationManager()
         conv_id = manager.create_conversation()
 
-        from app.rag.generation import Citation
+        from app.models import Citation
         citation = Citation(number=0, title="Test", journal="J", source_id="12345")
         citation_num = manager.get_or_store_citation(conv_id, citation)
 
@@ -106,7 +107,7 @@ class TestConversationManager(unittest.TestCase):
         manager = ConversationManager()
         conv_id = manager.create_conversation()
 
-        from app.rag.generation import Citation
+        from app.models import Citation
         citation1 = Citation(number=0, title="Test", journal="J", source_id="12345")
         citation2 = Citation(number=0, title="Test", journal="J", source_id="12345")
 
@@ -120,7 +121,7 @@ class TestConversationManager(unittest.TestCase):
         manager = ConversationManager()
         conv_id = manager.create_conversation()
 
-        from app.rag.generation import Citation
+        from app.models import Citation
         cit1 = Citation(number=0, title="A", journal="J", source_id="12345")
         cit2 = Citation(number=0, title="B", journal="J", source_id="67890")
         cit3 = Citation(number=0, title="C", journal="J", source_id="11111")
@@ -138,7 +139,7 @@ class TestConversationManager(unittest.TestCase):
         manager = ConversationManager()
         conv_id = manager.create_conversation()
 
-        from app.rag.generation import Citation
+        from app.models import Citation
 
         # Turn 1: Cite PMC12345 and PMC67890
         cit1 = Citation(number=0, title="A", journal="J", source_id="12345")
@@ -159,7 +160,7 @@ class TestConversationManager(unittest.TestCase):
         """Test that storing citation for nonexistent conversation raises error."""
         manager = ConversationManager()
 
-        from app.rag.generation import Citation
+        from app.models import Citation
         citation = Citation(number=0, title="Test", journal="J", source_id="12345")
 
         with self.assertRaises(ValueError):
@@ -170,7 +171,7 @@ class TestConversationManager(unittest.TestCase):
         manager = ConversationManager()
         conv_id = manager.create_conversation()
 
-        from app.rag.generation import Citation
+        from app.models import Citation
         cit1 = Citation(number=0, title="A", journal="J", source_id="12345")
         cit2 = Citation(number=0, title="B", journal="J", source_id="67890")
 
@@ -255,7 +256,7 @@ class TestConversationManager(unittest.TestCase):
         """Test that conversations are isolated from each other."""
         manager = ConversationManager()
 
-        from app.rag.generation import Citation
+        from app.models import Citation
 
         conv_id1 = manager.create_conversation()
         conv_id2 = manager.create_conversation()

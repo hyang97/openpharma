@@ -3,13 +3,14 @@ Semantic search for OpenPharma RAG system.
 
 This module provides vector similarity search over embedded document chunks,
 returning the most relevant chunks with full citation metadata.
+Supports hybrid retrieval combining fresh semantic search with historical chunks.
 """
-from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Dict
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 import time
 
+from app.models import SearchResult
 from app.db.database import engine
 from app.ingestion.embeddings import EmbeddingService
 from app.logging_config import get_logger
@@ -18,27 +19,6 @@ logger = get_logger(__name__)
 
 # Cache EmbeddingService instance to avoid repeated initialization overhead
 _embedding_service = None
-
-
-@dataclass
-class SearchResult:
-    """
-    A single search result containing chunk content and parent document metadata.
-    """
-    chunk_id: int
-    section: str
-    content: str
-    query: str
-    similarity_score: float
-
-    # Parent document metadata for citations
-    document_id: int
-    source_id: str  # PMC ID
-    title: str
-    authors: Optional[List[str]] = None
-    publication_date: Optional[str] = None
-    journal: Optional[str] = None
-    doi: Optional[str] = None
 
 
 def semantic_search(query: str, top_k: int = 10) -> List[SearchResult]:
@@ -121,6 +101,91 @@ limit :top_k
         search_results.append(result)
 
     return search_results
+
+
+def fetch_chunks_by_chunk_ids(chunk_ids: List[str]) -> Dict[int, SearchResult]:
+    """Fetch chunks by their chunk IDs, returning chunk_id -> SearchResult"""
+    if not chunk_ids:
+        return {}
+    
+    stmt = text(
+        """
+select
+chk.document_chunk_id
+, chk.content
+, chk.section
+, chk.document_id
+, doc.source_id
+, doc.title
+, doc.doc_metadata
+
+from document_chunks chk
+join documents doc
+  on chk.document_id = doc.document_id
+where chk.document_chunk_id = ANY(:chunk_ids)
+"""
+    )
+    
+    with Session(engine) as session:
+        result_chunks = session.execute(stmt, {'chunk_ids': chunk_ids}).fetchall()
+    
+    chunkid_to_searchresult = {}
+    for chunk in result_chunks:
+        chunk_metadata = chunk.doc_metadata or {}
+        result = SearchResult(
+            chunk_id=chunk.document_chunk_id,
+            section=chunk.section,
+            content=chunk.content,
+            query="", # Not semantic search, no query
+            similarity_score=None, # Not semantic search, no similarity score
+            document_id=chunk.document_id,
+            source_id=chunk.source_id,
+            title=chunk.title,
+            authors=chunk_metadata.get("authors", []),
+            publication_date=chunk_metadata.get("pub_date", ""),
+            journal=chunk_metadata.get("journal", ""),
+            doi=chunk_metadata.get("doi", "")
+        )
+        chunkid_to_searchresult[chunk.document_chunk_id] = result
+    return chunkid_to_searchresult
+
+def hybrid_retrieval(
+        query: str, 
+        conversation_history: Optional[List[dict]] = None, 
+        top_k = 20,
+        top_n = 5,
+        max_historical_chunks = 15
+) -> List[SearchResult]:
+    """Hybrid retrieval, semantic search + most recent historical chunks"""
+
+    hybrid_start = time.time()
+    new_chunks = semantic_search(query, top_k=top_k)[:top_n] # fetch top_k and keep top_n most similar
+    
+    recent_chunk_ids = []
+    seen_chunk_ids = set(chunk.chunk_id for chunk in new_chunks) 
+
+    if conversation_history:
+        for msg in reversed(conversation_history):
+            if msg['role'] == 'assistant' and 'cited_chunk_ids' in msg:
+                for chunk_id in msg['cited_chunk_ids']:
+                    if chunk_id not in seen_chunk_ids:
+                        recent_chunk_ids.append(chunk_id)
+                        seen_chunk_ids.add(chunk_id)
+                    if len(recent_chunk_ids) >= max_historical_chunks:
+                        break
+    
+    historical_chunks = []
+
+    if recent_chunk_ids:
+        result_chunks = fetch_chunks_by_chunk_ids(recent_chunk_ids)
+        for chunk_id in recent_chunk_ids:
+            historical_chunks.append(result_chunks[chunk_id])
+    
+    all_chunks = new_chunks + historical_chunks
+    hybrid_time = (time.time() - hybrid_start) * 1000
+    logger.info(f"  Hybrid retrieval time: {hybrid_time:.0f}ms ({len(all_chunks)} chunks, {len(new_chunks)} new, {len(historical_chunks)} historical)")
+    return all_chunks
+
 
 
 if __name__ == "__main__":
