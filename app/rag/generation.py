@@ -4,14 +4,14 @@ LLM-based generation for OpenPharma RAG system.
 Takes search results and generates synthesized answers with citations.
 """
 from fastapi import HTTPException
-from dataclasses import dataclass
 from typing import List, Optional
 import time
-
-from app.retrieval import semantic_search, SearchResult
-import os, re
+import os
+import re
 import ollama
 
+from app.models import SearchResult, RAGResponse
+from app.retrieval import semantic_search, hybrid_retrieval
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -19,73 +19,8 @@ logger = get_logger(__name__)
 # Model configuration - change this to experiment with different models
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 
-@dataclass
-class Citation:
-    """A single citation reference."""
-    number: int
-    title: str
-    journal: str
-    source_id: str  # PMC ID
-    authors: Optional[List[str]] = None
-    publication_date: Optional[str] = None
-    chunk_id: int = None
 
-
-@dataclass
-class RAGResponse:
-    """Complete answer with citations and metadata."""
-    user_message: str
-    generated_response: str
-    response_citations: List[Citation]  # Citations that appear in this specific response
-    chunks_used: List[SearchResult]
-    llm_provider: str
-    generation_time_ms: float
-    conversation_id: str
-
-def extract_citations_with_pmc_ids(answer_text: str, chunks: List[SearchResult]) -> tuple[str, List[Citation]]:
-    """
-    Extract PMC citations from LLM response, keeping [PMC...] citation format at this stage.
-
-    Returns:
-        Tuple of (answer_text with [PMC...], citations_list with number=0 as placeholder)
-    """
-    # Find all PMC IDs in order of appearance
-    cited_pmcs = []
-    bracket_contents = re.findall(r'\[([^\]]+)\]', answer_text)
-    for content in bracket_contents:
-        pmcs = re.findall(r'PMC(\d+)', content)
-        cited_pmcs.extend(pmcs)
-
-    # Get unique PMC IDs, preserving order
-    seen = set()
-    unique_pmcs = []
-    for pmc_id in cited_pmcs:
-        if pmc_id not in seen:
-            seen.add(pmc_id)
-            unique_pmcs.append(pmc_id)
-
-    # Build chunk lookup
-    chunk_map = {chunk.source_id: chunk for chunk in chunks}
-
-    # Build citation objects (number will be assigned later in endpoint)
-    citations = []
-    for pmc_id in unique_pmcs:
-        chunk = chunk_map.get(pmc_id)
-        if chunk:
-            citations.append(Citation(
-                number=0,  # Placeholder, will be assigned by conversation manager
-                title=chunk.title,
-                journal=chunk.journal,
-                source_id=pmc_id,
-                authors=chunk.authors,
-                publication_date=chunk.publication_date,
-                chunk_id=chunk.chunk_id
-            ))
-
-    # Return answer text unchanged (still has [PMC...] format)
-    return answer_text, citations
-
-def build_messages(user_message: str, chunks: list[SearchResult], top_n: int, conversation_history: Optional[List[dict]]) -> List[dict]:
+def build_messages(user_message: str, chunks: list[SearchResult], conversation_history: Optional[List[dict]]) -> List[dict]:
     """Build RAG prompt with user message, context, and literature chunks."""
 
     SYSTEM_PROMPT = """
@@ -111,33 +46,46 @@ You will respond concisely, summarizing the main answer, and providing supportin
 If there is insufficient information, your response must be **No sufficient evidence**
 Your response must include only the response to the user's message.
 Your answer must be based exclusively on the content provided in <Literature>.
-Your answer must start with ## Answer
-Your references section must start with ## References
+Your answer MUST start with: ## Answer
+Your references section MUST start with: ## References
 CRITICAL: You MUST cite sources using their EXACT [PMC...] identifiers from <Literature> inline in your answer text.
 CRITICAL: Do NOT use numbered citations like [1], [2], [3]. ONLY use [PMCxxxxxx] format.
+</Constraints>
 
 <Correct Examples>
-"GLP-1 agonists improve glycemic control [PMC12345678] and reduce cardiovascular risk [PMC87654321]."
+"
+## Answer:
+GLP-1 agonists improve glycemic control [PMC12345678] and reduce cardiovascular risk [PMC87654321].
+## References:
+[PMC12345678] ...
+[PMC12345678] ...
+"
 </Correct Examples>
 
 <Incorrect Examples>
 "GLP-1 agonists improve glycemic control [1] and reduce cardiovascular risk [2]."
 "GLP-1 agonists improve glycemic control [PMC12345678] and reduce cardiovascular risk [PMC12345678].
-References:
+Notes:
 [PMC12345678] ...
 [PMC12345678] ..."
 </Incorrect Examples>"
 """
     messages = []
     messages.append({'role': 'system', 'content': SYSTEM_PROMPT})
-    if conversation_history:
-        messages.extend(conversation_history)
 
-    current_message = f"<Literature>\nBelow are the top {top_n} most relevant literature passages to the user's query. Each passage starts with a unique [source_id].\n"
+    # Add conversation history, filtering out cited_source_ids (not part of Ollama API)
+    if conversation_history:
+        for msg in conversation_history:
+            messages.append({
+                'role': msg['role'],
+                'content': msg['content']
+            })
+
+    current_message = f"<Literature>\nBelow are the top {len(chunks)} most relevant literature passages to the user's query, as well as recently cited literature. Each passage starts with a unique [source_id].\n"
     # Use top n chunks in context, no re-ranking
     # Add to prompt with numbered chunks, formatted for inline citations [x]
     
-    for idx, chunk in enumerate(chunks[:top_n], 1):
+    for idx, chunk in enumerate(chunks, 1):
         # Strip citation markers [1], [2, 3], etc. from original paper text
         cleaned_content = re.sub(r'\[\d+(?:,\s*\d+)*\]', '', chunk.content)
         current_message += f"[PMC{chunk.source_id}] Title: {chunk.title} | {cleaned_content} | Journal: {chunk.journal}\n"
@@ -176,12 +124,18 @@ def generate_response(
 
     # Fetch top k chunks
     retrieval_start = time.time()
-    chunks = semantic_search(user_message, top_k=top_k)
+    # chunks = semantic_search(user_message, top_k=top_k)
+    chunks = hybrid_retrieval(
+        query=user_message,
+        conversation_history=conversation_history,
+        top_k=top_k,
+        top_n=top_n
+    )
     retrieval_time = (time.time() - retrieval_start) * 1000
     logger.info(f"Retrieval time: {retrieval_time:.0f}ms")
 
     # Build messages array for multi-turn chat
-    messages = build_messages(user_message, chunks, top_n=top_n, conversation_history=conversation_history)
+    messages = build_messages(user_message, chunks, conversation_history=conversation_history)
     logger.debug(f"Messages:\n{messages}\n")
 
     # Call LLM
@@ -197,8 +151,6 @@ def generate_response(
             )
             llm_time = (time.time() - llm_start) * 1000
             logger.info(f"LLM generation time: {llm_time:.0f}ms")
-
-            generated_response, citations = extract_citations_with_pmc_ids(response['message']['content'], chunks=chunks[:top_n])
         else:
             # TODO: Add OpenAI integration later
             logger.warning("OpenAI integration requested but not implemented")
@@ -210,9 +162,8 @@ def generate_response(
 
     return RAGResponse(
         user_message=user_message,
-        generated_response=generated_response,
-        response_citations=citations,
-        chunks_used=chunks[:top_n],
+        generated_response=response['message']['content'],
+        prompt_literature_chunks=chunks[:top_n],
         llm_provider="ollama" if use_local else "openai",
         generation_time_ms=(time.time() - start_time) * 1000,
         conversation_id=conversation_id

@@ -34,7 +34,7 @@ Performs vector similarity search over 1.89M embedded chunks.
 
 **SearchResult fields:**
 - `chunk_id`, `document_id`, `section`, `content`
-- `similarity_score` (0-1, higher is better)
+- `similarity_score: Optional[float]` (0-1 for semantic search, None for ID-based retrieval)
 - `title`, `source_id` (PMC ID)
 - `authors`, `publication_date`, `journal`, `doi` (optional metadata)
 
@@ -47,6 +47,37 @@ Performs vector similarity search over 1.89M embedded chunks.
 **Quality:**
 - Typical similarity scores: 0.84-0.86 for relevant results
 - Tested with 7 gold-standard diabetes queries (see `tests/test_retrieval_quality.py`)
+
+### Function: `fetch_chunks_by_chunk_ids(chunk_ids: List[int]) -> Dict[int, SearchResult]`
+
+Fetches specific chunks by their database IDs (used for hybrid retrieval).
+
+**Implementation:**
+1. Query chunks table with `WHERE chunk_id = ANY(:chunk_ids)`
+2. Join with documents table for metadata
+3. Return dict mapping chunk_id -> SearchResult
+
+**Use case:** Retrieve historically cited chunks for multi-turn conversations
+
+### Function: `hybrid_retrieval(query: str, conversation_history: Optional[List[dict]], top_k: int = 20, top_n: int = 5, max_historical_chunks: int = 15) -> List[SearchResult]`
+
+Combines fresh semantic search with historical chunks from conversation.
+
+**Implementation:**
+1. Perform semantic search for top_n fresh chunks (most relevant to current query)
+2. Extract `cited_chunk_ids` from conversation_history (walking backwards)
+3. Fetch historical chunks using `fetch_chunks_by_chunk_ids()`
+4. Combine fresh + historical, deduplicating by chunk_id
+5. Return combined list (fresh chunks first, then historical)
+
+**Strategy:**
+- Turn 1: Pure semantic search (no history) - returns N fresh chunks
+- Turn 2+: Hybrid retrieval - returns N fresh + up to M historical chunks
+- Prevents citation hallucination by making previously cited chunks available
+
+**Performance:**
+- Turn 1: ~50-300ms (semantic search only)
+- Turn 2+: ~200-600ms (semantic search + chunk ID lookup)
 
 ## 2. Generation (`app/rag/generation.py`)
 
@@ -162,23 +193,40 @@ messages = [
 # Only computes new tokens for "What about side effects?"
 ```
 
-**Our implementation (Phase 1):**
+**Our implementation (Phase 1 - COMPLETED):**
 1. **Conversation Manager** (`app/rag/conversation_manager.py`)
    - Store conversations in-memory dict (keyed by conversation_id)
    - Manage message history (user/assistant turns)
+   - Track citations with conversation-wide numbering (source_id -> number)
+   - Store `cited_chunk_ids` and `cited_source_ids` per message
    - Clean up old conversations after timeout
 
-2. **Updated `/ask` endpoint** (`app/main.py`)
+2. **Updated `/chat` endpoint** (`app/main.py`)
    - Accept optional `conversation_id` in request
    - Retrieve conversation history from manager
-   - Append new user message
+   - Use hybrid retrieval (fresh + historical chunks)
+   - Extract citations from LLM response (PMC format)
+   - Assign conversation-wide citation numbers
+   - Store messages with cited_chunk_ids/cited_source_ids
    - Pass full messages array to Ollama
-   - Store assistant response
    - Set `keep_alive=-1` to keep model loaded
 
-3. **No stateful sessions with Ollama needed**
+3. **Data Models** (`app/models.py`)
+   - `SearchResult` - Retrieved chunk with metadata
+   - `Citation` - Numbered citation (immutable)
+   - `RAGResponse` - LLM response with embedded [PMCxxxxxx] citations
+   - `Conversation` - Message history + citation tracking
+
+4. **No stateful sessions with Ollama needed**
    - Backend manages conversation state
    - Ollama automatically optimizes via KV cache reuse
+
+**Citation Flow:**
+1. LLM generates response with [PMCxxxxxx] format
+2. Backend extracts PMC IDs and builds Citation objects
+3. ConversationManager assigns conversation-wide numbers ([1], [2], etc.)
+4. Frontend display renumbers [PMCxxxxxx] -> [1] for user
+5. Messages store both source_ids (for display) and chunk_ids (for retrieval)
 
 **Performance benefits:**
 - Without cache reuse: ~2-5s per turn (reprocesses everything)
@@ -192,6 +240,10 @@ messages = [
 
 **Phase 1 improvements (Current):**
 - ✅ Multi-turn conversation support with KV cache optimization
+- ✅ Hybrid retrieval (fresh semantic search + historical chunks)
+- ✅ Chunk-level citation tracking (prevents hallucination)
+- ✅ Conversation-wide citation numbering
+- ⏳ Fix Turn 2 citation issue (separate fresh/historical in prompt)
 - ⏳ Query rewriting for follow-up questions ("What about side effects?" → "What are the side effects of metformin?")
 - ⏳ Citation accuracy verification (post-process to check claims match chunks)
 - Structured output (JSON) to enforce citation format

@@ -14,7 +14,7 @@ export function ConversationSidebar({
   currentConversationId,
   onSelectConversation
 }: ConversationSidebarProps) {
-  const [isExpanded, setIsExpanded] = useState(true)
+  const [isExpanded, setIsExpanded] = useState(false)
 
   if (!isExpanded) {
     return (
