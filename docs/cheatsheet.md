@@ -152,3 +152,108 @@ curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "What is metformin?", "use_local": true}'
 ```
+
+## Deployment (Production)
+
+### Cloudflare Tunnel Setup
+
+**Install cloudflared:**
+```bash
+brew install cloudflare/cloudflare/cloudflared
+cloudflared --version
+```
+
+**Authenticate:**
+```bash
+cloudflared tunnel login  # Opens browser, saves credentials to ~/.cloudflared/cert.pem
+```
+
+**Create tunnel:**
+```bash
+cloudflared tunnel create openpharma-api  # Creates tunnel with UUID
+ls ~/.cloudflared/*.json  # Find your tunnel credentials file
+```
+
+**Configure tunnel (create ~/.cloudflared/config.yml):**
+```yaml
+tunnel: openpharma-api
+credentials-file: /Users/YOUR_USERNAME/.cloudflared/TUNNEL_UUID.json
+
+ingress:
+  - hostname: api.byhenry.me
+    service: http://localhost:8000
+  - service: http_status:404
+```
+
+**Route DNS:**
+```bash
+cloudflared tunnel route dns openpharma-api api.byhenry.me
+```
+
+**Run tunnel:**
+```bash
+cloudflared tunnel run openpharma-api  # Keep terminal open, or run as service
+```
+
+**Test tunnel:**
+```bash
+curl https://api.byhenry.me/health  # Should return {"status":"healthy",...}
+```
+
+---
+
+### Vercel Deployment (UI)
+
+**Install Vercel CLI:**
+```bash
+npm install -g vercel
+```
+
+**Deploy:**
+```bash
+cd ui
+vercel                    # First time: answers prompts, creates project
+vercel --prod             # Deploy to production
+```
+
+**Set environment variables:**
+```bash
+vercel env add NEXT_PUBLIC_API_URL production  # Enter: https://api.byhenry.me
+vercel env ls                                   # List environment variables
+```
+
+**Add custom domain:**
+```bash
+vercel domains add openpharma.byhenry.me
+# Then add A record in Cloudflare DNS: openpharma → 76.76.21.21
+```
+
+**Check deployment:**
+```bash
+vercel ls                 # List deployments
+vercel logs               # View logs
+```
+
+---
+
+### Production Checklist
+
+**Before sharing with users:**
+- [ ] Docker services running: `docker-compose ps`
+- [ ] Cloudflare tunnel running: `cloudflared tunnel run openpharma-api`
+- [ ] API accessible: `curl https://api.byhenry.me/health`
+- [ ] UI deployed: `https://openpharma.byhenry.me`
+- [ ] CORS configured: Check `app/main.py` includes production domain
+- [ ] Environment variables set in Vercel dashboard
+
+**Keep running during demo:**
+- Docker containers (postgres + api)
+- Cloudflare tunnel terminal
+- Keep laptop on/awake
+
+**To stop:**
+```bash
+# Stop tunnel: Ctrl+C in tunnel terminal
+docker-compose down       # Stop backend
+# Vercel UI stays online (hosted on Vercel's servers)
+```

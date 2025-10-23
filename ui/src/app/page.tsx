@@ -15,7 +15,7 @@ export default function Chat() {
   const [currConversationId, setCurrConversationId] = useState<string | null>(null) // State: current conversation, initialized to NULL to disallow ''
   const [allConversationSumm, setAllConversationSumm] = useState<ConversationSummary[]>([])
   const [currCitations, setCurrCitations] = useState<Citation[]>([])
-  
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://localhost:8000'
 
   // Fetch conversations from backend
   const fetchConversations = async () => {

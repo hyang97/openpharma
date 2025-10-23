@@ -1,8 +1,8 @@
 # OpenPharma TODO List
 
-Last updated: 2025-10-22
+Last updated: 2025-10-23
 
-## Current Sprint: Build RAG Query Interface
+## Current Sprint: Phase 1 Demo Deployment
 
 ### Active Tasks
 - [x] Implement semantic search retrieval (top-K similarity search)
@@ -13,8 +13,11 @@ Last updated: 2025-10-22
 - [x] Add performance timing instrumentation
 - [x] Refactor citation flow: immutable Citations, chunk-level tracking, centralized data models
 - [x] Debug and fix Turn 2+ citation generation regression (hybrid retrieval complexity issue)
-- [ ] Optimize response time to < 30 seconds (current: 18-40s, bottleneck identified as LLM generation)
+- [x] Add UI animations (message fade-in, citation expand/collapse, sidebar transitions)
+- [x] Deploy to production (Cloudflare Tunnel + Vercel)
+- [ ] Share with 5-10 friends for feedback
 - [ ] Set up RAGAS evaluation framework
+- [ ] Optimize response time to < 30 seconds (deferred to Phase 2 with Gemini)
 
 **CRITICAL: Ollama Version Requirement**
 - **MUST use Ollama 0.11.x** (tested on 0.11.11)
@@ -34,12 +37,14 @@ Last updated: 2025-10-22
 - [ ] Targeted topic expansion (Obesity, Cardiovascular Disease)
 - [ ] Landmark paper augmentation (highly-cited foundational papers)
 
-### UI/UX Enhancements
-- [ ] Add smooth slide-down animation for citation list expansion (currently instant)
-  - Add Tailwind animation classes to citations container
-  - Increase scroll delay from 100ms to ~350ms to match animation timing
-
-### Phase 2 - Multi-Domain Intelligence
+### Phase 2 - Cloud Deployment & Advanced RAG
+- [ ] Deploy to GCP with Gemini API (8-10s responses)
+  - Cloud Run for API
+  - Gemini Flash/Pro via Vertex AI
+  - Self-hosted DB via Cloudflare Tunnel (saves $30-50/month)
+- [ ] Implement query rewriting for better multi-turn retrieval
+- [ ] Add chunk reranking (cross-encoder or LLM-based)
+- [ ] Add routing/classification for query types
 - [ ] Implement query rewriting for better multi-turn retrieval (alternative to hybrid retrieval)
 - [ ] Re-evaluate hybrid retrieval with more capable model (GPT-4 or Llama 3.1 70B)
 - [ ] Add MLflow or LangSmith for prompt versioning and experiment tracking

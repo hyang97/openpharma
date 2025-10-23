@@ -39,13 +39,13 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               const citationElement = document.getElementById(`citation-${firstCitationNum}`)
               if (citationElement) {
                 citationElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                // Highlight effect
-                citationElement.classList.add('ring-2', 'ring-blue-400')
+                // Highlight effect with smooth shadow
+                citationElement.style.boxShadow = '0 0 0 2px rgba(96, 165, 250, 0.8)'
                 setTimeout(() => {
-                  citationElement.classList.remove('ring-2', 'ring-blue-400')
+                  citationElement.style.boxShadow = ''
                 }, 2000)
               }
-            }, 100)
+            }, 350)
           }}
           className="text-blue-400 hover:text-blue-300 hover:underline font-semibold cursor-pointer transition-colors"
         >
@@ -65,7 +65,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   }
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}>
       <div className={`max-w-3xl rounded-xl px-5 py-4 ${
         isUser
           ? 'bg-slate-700 text-white'

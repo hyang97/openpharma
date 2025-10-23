@@ -26,7 +26,10 @@ app = FastAPI(title="OpenPharma API", version="0.1.0")
 # Configure CORS to allow requests from React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React dev server
+    allow_origins=[
+        "http://localhost:3000",  # React dev server
+        "https://openpharma.byhenry.me"  # Production
+    ],
     allow_credentials=True,
     allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
     allow_headers=["*"],  # Allow all headers

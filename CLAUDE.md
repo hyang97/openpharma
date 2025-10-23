@@ -12,9 +12,9 @@ The project follows a phased development approach across three phases:
 
 ### Phase 1: Research Literature Intelligence MVP (Current)
 - **Tech Stack**: Next.js/React UI, FastAPI backend, Ollama Llama 3.1 8B/OpenAI GPT-4 (configurable), Local Postgres + pgvector
-- **Primary Data Source**: PubMed Central Open Access (diabetes research focus, ~52K papers)
-- **Core Capability**: Conversational RAG interface with sequential citations
-- **Status**: ✅ RAG pipeline implemented, ✅ React UI built, ⏳ Conversation history & query rewriting pending
+- **Primary Data Source**: PubMed Central Open Access (diabetes research focus, 52K papers fully ingested)
+- **Core Capability**: Multi-turn conversational RAG interface with conversation-wide citation numbering
+- **Status**: ✅ RAG pipeline implemented, ✅ React UI with collapsible sidebar, ✅ Multi-turn conversations, ⏳ Performance optimization & RAGAS evaluation pending
 
 ### Phase 2: Multi-Domain Intelligence Platform
 - **Tech Stack**: FastAPI + LangChain/LangGraph for agent orchestration, Postgres JSONB for relationships
@@ -28,18 +28,20 @@ The project follows a phased development approach across three phases:
 ## Key Technical Components
 
 ### RAG Pipeline (Implemented)
-- **Retrieval**: Semantic search via pgvector (top-20 chunks by cosine similarity)
+- **Retrieval**: Hybrid semantic search (historical + new chunks) via pgvector, top-20 chunks by cosine similarity
 - **Generation**: Ollama Llama 3.1 8B or OpenAI GPT-4 (configurable via `use_local` flag)
-- **Citation Extraction**: Regex-based PMC ID extraction → sequential renumbering [1], [2], etc.
+- **Citation Tracking**: Immutable Citation objects with chunk-level tracking, conversation-wide numbering
+- **Multi-turn Support**: Conversation history with hybrid retrieval (past chunks + new semantic search)
 - **Response Model**: `RAGResponse` with answer, citations list, query, LLM provider, timing
+- **Performance**: 18-40s response time (97% LLM generation, 3% retrieval)
 - See `app/rag/generation.py` for implementation
 
 ### React UI (Implemented)
 - **Framework**: Next.js 15 + TypeScript + Tailwind CSS
-- **Design**: Dark theme (slate + cobalt blue), OpenEvidence-inspired centered input
-- **Components**: 5 modular components (ChatHeader, MessageList, MessageBubble, CitationList, ChatInput)
+- **Design**: Dark theme (slate + cobalt blue) with collapsible sidebar for conversation management
+- **Components**: Modular components (ChatHeader, MessageList, MessageBubble, CitationList, ChatInput, Sidebar)
 - **State Management**: React useState in main page component
-- **Features**: Loading indicators, clickable header to return home, Enter to send
+- **Features**: Multi-turn conversations, conversation-wide citation numbering, loading indicators, collapsible sidebar
 - **Shared Types**: `src/types/message.ts` for Message and Citation types
 - See `docs/ui_design.md` for complete design documentation
 
@@ -218,14 +220,16 @@ data/batches/               # Batch API files (gitignored)
 ## Success Metrics
 
 ### Phase 1 Targets (Learning Focused)
-- ✅ Working RAG system with research literature
-- ✅ React UI with dark theme and citation display
-- ⏳ <30 second response time for complex queries
+- ✅ Working RAG system with research literature (52K papers, 1.89M chunks)
+- ✅ React UI with dark theme, citation display, and collapsible sidebar
+- ✅ Multi-turn conversation support with hybrid retrieval
+- ✅ Conversation-wide citation numbering
+- ⏳ Query rewriting for better multi-turn retrieval
+- ⏳ Chunk reranking to improve retrieval quality
+- ⏳ <30 second response time for complex queries (current: 18-40s, bottleneck: LLM generation)
 - ⏳ 95%+ citation accuracy measurement
-- ⏳ Multi-turn conversation support
-- ⏳ Query rewriting for better retrieval
-- ⏳ Docker deployment + Cloud Run demo
 - ⏳ RAGAS evaluation framework implementation
+- ⏳ Docker deployment + Cloud Run demo
 
 ### Phase 2 Targets
 - Support cross-domain queries

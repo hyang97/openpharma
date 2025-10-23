@@ -61,3 +61,23 @@ Key technical decisions made during OpenPharma development.
 **Future**: Re-evaluate hybrid retrieval in Phase 2 with GPT-4 or Llama 3.1 70B, or implement query rewriting as alternative approach.
 **Learning**: Simpler is better for smaller models. Prompt versioning is critical - created `docs/prompts/` for tracking.
 **Tradeoff**: No historical context in retrieval, but model wasn't using it correctly anyway. Query rewriting may be better approach.
+
+## 2025-10-23: Deploy with Cloudflare Tunnel + Vercel (Phase 1 Demo)
+**Problem**: Need to share OpenPharma with friends/colleagues for feedback without paying for cloud infrastructure.
+**Decision**: Self-host everything (DB + Ollama + API) on laptop, expose via Cloudflare Tunnel, deploy UI to Vercel.
+**Architecture**:
+- **Database**: Postgres + pgvector running locally (22GB actual size)
+- **API**: FastAPI on laptop, exposed via Cloudflare Tunnel
+- **LLM**: Ollama Llama 3.1 8B running locally (30-50s responses)
+- **UI**: Next.js deployed to Vercel free tier
+**Why**:
+- **$0/month cost** for Phase 1 demo - perfect for friend feedback
+- Cloudflare Tunnel is free, secure (encrypted), and easy to set up
+- Vercel free tier hosts UI permanently
+- Validates product before spending GCP credits
+**Implementation**: See `docs/cheatsheet.md` deployment section for commands.
+**Tradeoffs**:
+- Laptop must stay on during demos
+- ~300ms added latency from Cloudflare Tunnel (acceptable)
+- 30-50s responses with local Ollama (users understand it's a demo)
+**Next Steps**: After friend feedback, upgrade to Cloud Run + Gemini for 8-10s responses using GCP credits.
