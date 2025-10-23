@@ -16,34 +16,44 @@ export function ConversationSidebar({
 }: ConversationSidebarProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 
-  if (!isExpanded) {
-    return (
-      <div className="w-12 bg-slate-800 border-r border-slate-700 flex items-start p-2">
-        <button
-          onClick={() => setIsExpanded(true)}
-          className="p-2 hover:bg-slate-700 rounded transition-colors"
-          title="Expand sidebar"
-        >
-          <span className="text-slate-400">☰</span>
-        </button>
-      </div>
-    )
-  }
-
   return (
-    <div className="w-64 bg-slate-800 border-r border-slate-700 flex flex-col">
-      <div className="p-4 border-b border-slate-700 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Conversations</h2>
-        <button
-          onClick={() => setIsExpanded(false)}
-          className="p-1 hover:bg-slate-700 rounded transition-colors"
-          title="Collapse sidebar"
-        >
-          <span className="text-slate-400">‹</span>
-        </button>
+    <div
+      className={`bg-slate-800 border-r border-slate-700 flex flex-col transition-all duration-300 ease-in-out ${
+        isExpanded ? 'w-64' : 'w-12'
+      }`}
+    >
+      {/* Header/Toggle Button */}
+      <div className="p-4 flex items-center justify-between">
+        {!isExpanded ? (
+          <button
+            onClick={() => setIsExpanded(true)}
+            className="hover:bg-slate-700 rounded transition-colors w-full h-full flex items-center justify-center"
+            title="Expand sidebar"
+          >
+            <span className="text-slate-400">☰</span>
+          </button>
+        ) : (
+          <>
+            <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide whitespace-nowrap">
+              Conversations
+            </h2>
+            <button
+              onClick={() => setIsExpanded(false)}
+              className="p-1 hover:bg-slate-700 rounded transition-colors"
+              title="Collapse sidebar"
+            >
+              <span className="text-slate-400">‹</span>
+            </button>
+          </>
+        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      {/* Conversation List */}
+      <div
+        className={`flex-1 overflow-y-auto p-4 transition-opacity duration-300 ${
+          isExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+      >
         {conversations.length === 0 ? (
           <div className="text-sm text-slate-400">No conversations yet</div>
         ) : (

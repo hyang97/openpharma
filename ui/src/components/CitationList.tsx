@@ -38,7 +38,12 @@ export function CitationList({ citations }: CitationListProps) {
         <span className="uppercase tracking-wide">{showCitations ? 'Hide' : 'Show'} all sources ({citations.length})</span>
       </button>
 
-      {showCitations && (
+      <div
+        className={`transition-all duration-300 ease-in-out ${
+          showCitations ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'
+        }`}
+        style={{ overflow: showCitations ? 'visible' : 'hidden' }}
+      >
         <div className="space-y-2">
           {citations.map((citation) => (
             <div
@@ -62,7 +67,7 @@ export function CitationList({ citations }: CitationListProps) {
             </div>
           ))}
         </div>
-      )}
+      </div>
     </div>
   )
 }
