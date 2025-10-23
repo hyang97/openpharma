@@ -12,8 +12,7 @@ Last updated: 2025-10-22
 - [x] Fix citation format consistency (store PMC IDs internally, renumber for display only)
 - [x] Add performance timing instrumentation
 - [x] Refactor citation flow: immutable Citations, chunk-level tracking, centralized data models
-- [x] Implement hybrid retrieval (fresh semantic search + historical chunks from conversation)
-- [ ] Fix Turn 2 citation issue: Separate fresh and historical chunks in Literature prompt
+- [x] Debug and fix Turn 2+ citation generation regression (hybrid retrieval complexity issue)
 - [ ] Optimize response time to < 30 seconds (current: 18-40s, bottleneck identified as LLM generation)
 - [ ] Set up RAGAS evaluation framework
 
@@ -41,6 +40,9 @@ Last updated: 2025-10-22
   - Increase scroll delay from 100ms to ~350ms to match animation timing
 
 ### Phase 2 - Multi-Domain Intelligence
+- [ ] Implement query rewriting for better multi-turn retrieval (alternative to hybrid retrieval)
+- [ ] Re-evaluate hybrid retrieval with more capable model (GPT-4 or Llama 3.1 70B)
+- [ ] Add MLflow or LangSmith for prompt versioning and experiment tracking
 - [ ] Add ClinicalTrials.gov integration
 - [ ] Add FDA Drugs@FDA integration
 - [ ] Add retry logic with exponential backoff
