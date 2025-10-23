@@ -46,8 +46,8 @@ You will respond concisely, summarizing the main answer, and providing supportin
 If there is insufficient information, your response must be **No sufficient evidence**
 Your response must include only the response to the user's message.
 Your answer must be based exclusively on the content provided in <Literature>.
-Your answer MUST start with: ## Answer
-Your references section MUST start with: ## References
+Your answer must start with ## Answer
+Your references section must start with ## References
 CRITICAL: You MUST cite sources using their EXACT [PMC...] identifiers from <Literature> inline in your answer text.
 CRITICAL: Do NOT use numbered citations like [1], [2], [3]. ONLY use [PMCxxxxxx] format.
 </Constraints>
@@ -63,11 +63,10 @@ GLP-1 agonists improve glycemic control [PMC12345678] and reduce cardiovascular 
 </Correct Examples>
 
 <Incorrect Examples>
-"GLP-1 agonists improve glycemic control [1] and reduce cardiovascular risk [2]."
-"GLP-1 agonists improve glycemic control [PMC12345678] and reduce cardiovascular risk [PMC12345678].
+"GLP-1 agonists improve glycemic control [1] and reduce cardiovascular risk [2].
 Notes:
-[PMC12345678] ...
-[PMC12345678] ..."
+[1] ...
+[2] ..."
 </Incorrect Examples>"
 """
     messages = []
@@ -81,7 +80,8 @@ Notes:
                 'content': msg['content']
             })
 
-    current_message = f"<Literature>\nBelow are the top {len(chunks)} most relevant literature passages to the user's query, as well as recently cited literature. Each passage starts with a unique [source_id].\n"
+    # current_message = f"<Literature>\nBelow are the top {len(chunks)} most relevant literature passages to the user's query, as well as recently cited literature. Each passage starts with a unique [source_id].\n"
+    current_message = f"<Literature>\nBelow are the top {len(chunks)} most relevant literature passages to the user's query. Each passage starts with a unique [source_id].\n"
     # Use top n chunks in context, no re-ranking
     # Add to prompt with numbered chunks, formatted for inline citations [x]
     
@@ -124,13 +124,13 @@ def generate_response(
 
     # Fetch top k chunks
     retrieval_start = time.time()
-    # chunks = semantic_search(user_message, top_k=top_k)
-    chunks = hybrid_retrieval(
-        query=user_message,
-        conversation_history=conversation_history,
-        top_k=top_k,
-        top_n=top_n
-    )
+    chunks = semantic_search(user_message, top_k=top_k)[:top_n]
+    # chunks = hybrid_retrieval(
+    #     query=user_message,
+    #     conversation_history=conversation_history,
+    #     top_k=top_k,
+    #     top_n=top_n
+    # )
     retrieval_time = (time.time() - retrieval_start) * 1000
     logger.info(f"Retrieval time: {retrieval_time:.0f}ms")
 
@@ -163,7 +163,7 @@ def generate_response(
     return RAGResponse(
         user_message=user_message,
         generated_response=response['message']['content'],
-        prompt_literature_chunks=chunks[:top_n],
+        prompt_literature_chunks=chunks,  # Include ALL chunks from prompt (new + historical)
         llm_provider="ollama" if use_local else "openai",
         generation_time_ms=(time.time() - start_time) * 1000,
         conversation_id=conversation_id

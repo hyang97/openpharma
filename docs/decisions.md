@@ -45,3 +45,19 @@ Key technical decisions made during OpenPharma development.
 **Why**: Keeps LLM prompts consistent (always uses PMC IDs), prevents confusion in follow-up responses, separates storage from display concerns.
 **Implementation**: `generation.py` returns [PMC...], `main.py` stores [PMC...], `renumber_text_for_display()` converts to [1], [2] only for API responses.
 **Tradeoff**: Slight overhead from renumbering on every request, but negligible compared to LLM generation time.
+
+## 2025-10-22: Revert hybrid retrieval - Use semantic search only
+**Problem**: Hybrid retrieval (semantic search + historical chunks) broke citation generation on Turn 2+ with Llama 3.1 8B. Model generated responses without any [PMC...] citations.
+**Root Cause**:
+- Variable chunk count (5 → 9) between turns confused model
+- "Recently cited literature" phrase signaled model not to cite
+- Llama 3.1 8B struggles with complex multi-turn reasoning when context changes significantly
+**Decision**: Revert to pure semantic_search() for now. Defer hybrid retrieval to Phase 2 with more capable model.
+**Implementation**:
+- `generation.py`: Use `semantic_search(query, top_k=20)[:top_n]` (always 5 chunks)
+- Remove "as well as recently cited literature" from prompt
+- Keep simpler constraint language (removed "CRITICAL: EVERY" over-emphasis)
+**Result**: ✅ Citations now work correctly on all turns (tested Turn 1: 2 citations, Turn 2: 4 citations)
+**Future**: Re-evaluate hybrid retrieval in Phase 2 with GPT-4 or Llama 3.1 70B, or implement query rewriting as alternative approach.
+**Learning**: Simpler is better for smaller models. Prompt versioning is critical - created `docs/prompts/` for tracking.
+**Tradeoff**: No historical context in retrieval, but model wasn't using it correctly anyway. Query rewriting may be better approach.
