@@ -65,19 +65,30 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   }
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-      <div className={`max-w-3xl rounded-xl px-5 py-4 ${
-        isUser
-          ? 'bg-slate-700 text-white'
-          : 'bg-slate-800 border border-slate-700'
-      }`}>
-        <div className={`text-xs font-semibold mb-2 uppercase tracking-wide ${isUser ? 'text-slate-300' : 'text-slate-400'}`}>
-          {isUser ? 'You' : 'OpenPharma'}
+    <div className="animate-fade-in">
+      {isUser ? (
+        // User message: bubble on the right
+        <div className="flex justify-end mb-6">
+          <div className="max-w-3xl rounded-xl px-5 py-4 bg-slate-700 text-white">
+            <div className="text-xs font-semibold mb-2 uppercase tracking-wide text-slate-300">
+              You
+            </div>
+            <div className="text-base leading-relaxed whitespace-pre-wrap text-white">
+              {message.content}
+            </div>
+          </div>
         </div>
-        <div className={`text-base leading-relaxed whitespace-pre-wrap ${isUser ? 'text-white' : 'text-slate-100'}`}>
-          {isUser ? message.content : renderContentWithCitations(message.content)}
+      ) : (
+        // Assistant message: no bubble, full width
+        <div className="mb-6">
+          <div className="text-xs font-semibold mb-3 uppercase tracking-wide text-slate-400">
+            OpenPharma
+          </div>
+          <div className="text-base leading-relaxed whitespace-pre-wrap text-slate-100">
+            {renderContentWithCitations(message.content)}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

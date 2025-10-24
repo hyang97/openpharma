@@ -46,14 +46,14 @@ export function ConversationSidebar({
         `}
       >
       {/* Header/Toggle Button */}
-      <div className={`h-14 flex items-center ${isExpanded ? 'px-4 justify-between' : 'justify-center'}`}>
+      <div className={`py-3 md:py-4 flex items-center ${isExpanded ? 'px-4 justify-between' : 'justify-center'}`}>
         {!isExpanded ? (
           <button
             onClick={() => setIsExpanded(true)}
-            className="hidden md:flex hover:bg-slate-700 rounded-lg transition-colors p-2 items-center justify-center"
+            className="hidden md:flex hover:bg-slate-700 rounded-lg transition-colors w-8 h-8 items-center justify-center flex-shrink-0"
             title="Expand sidebar"
           >
-            <span className="text-slate-400 text-xl">☰</span>
+            <span className="text-slate-400 text-lg leading-none">☰</span>
           </button>
         ) : (
           <>
@@ -69,10 +69,10 @@ export function ConversationSidebar({
                   setIsExpanded(false) // Collapse on desktop
                 }
               }}
-              className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+              className="w-8 h-8 hover:bg-slate-700 rounded-lg transition-colors flex items-center justify-center flex-shrink-0"
               title="Close sidebar"
             >
-              <span className="text-slate-400 text-xl">‹</span>
+              <span className="text-slate-400 text-lg leading-none">‹</span>
             </button>
           </>
         )}

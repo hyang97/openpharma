@@ -16,13 +16,19 @@ Last updated: 2025-10-23
 - [x] Add UI animations (message fade-in, citation expand/collapse, sidebar transitions)
 - [x] Deploy to production (Cloudflare Tunnel + Vercel)
 - [x] Configure API_URL environment variable in UI
-- [x] Make UI mobile-responsive
+- [x] Make UI mobile-responsive and polish UX
   - [x] Update sidebar to overlay on mobile screens with backdrop
   - [x] Update ChatHeader for mobile layout (hamburger menu, responsive text)
-  - [x] Update ChatInput with responsive padding/sizing
+  - [x] Update ChatInput with responsive padding/sizing and auto-expanding textarea
   - [x] Update page.tsx layout for mobile screens (responsive title, wiring)
   - [x] Add mobile hamburger menu to landing page
   - [x] Fix sidebar collapse/expand button alignment (desktop and mobile)
+  - [x] Make ChatHeader and ChatInput sticky (top/bottom) on mobile
+  - [x] Update message bubbles (user messages only, assistant messages as plain text)
+  - [x] Fix iOS zoom issue with 16px minimum font size
+  - [x] Add auto-scroll for citations expansion on mobile
+  - [x] Add auto-scroll to top when first message sent on mobile
+  - [x] Update page title and meta tags
   - [x] Test mobile responsiveness with Chrome DevTools MCP
 - [ ] Share with 5-10 friends for feedback
 - [ ] Set up RAGAS evaluation framework

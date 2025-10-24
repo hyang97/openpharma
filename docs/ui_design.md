@@ -88,9 +88,9 @@ State flows down through props, and callbacks flow up to update parent state.
 ### Color Palette
 
 - **Background**: `slate-900` (dark charcoal)
-- **User Messages**: `slate-700` (lighter grey)
-- **Assistant Messages**: `slate-800` with `slate-700` border
-- **Accent**: `blue-600` (cobalt) for buttons and citation numbers
+- **User Messages**: `slate-700` bubble (lighter grey)
+- **Assistant Messages**: No bubble, plain text on dark background
+- **Accent**: `blue-500` (electric blue) for buttons and citation numbers
 - **Text**: White and various slate tones (100-500)
 
 ### Typography
@@ -120,33 +120,51 @@ State flows down through props, and callbacks flow up to update parent state.
 
 ### Component Patterns
 
-#### ConversationSidebar (NEW)
-- **Props**: `conversations: ConversationSummary[]`, `currentId: string | null`, `onSelect: (id: string) => void`
+#### ConversationSidebar
+- **Props**: `conversations: ConversationSummary[]`, `currentId: string | null`, `onSelect: (id: string) => void`, `isOpen: boolean`, `onToggle: () => void`
 - **Features**:
   - List of conversations with preview of first message
   - Highlight currently active conversation
   - Click to switch conversations
   - Scroll if list exceeds viewport height
-  - Collapsible on mobile
+  - Collapsible/expandable on desktop (48px collapsed, 256px expanded)
+  - Mobile: Full-width drawer overlay with backdrop, always expanded when open
+  - Auto-expands on mobile, manual collapse/expand on desktop
 
 #### ChatInput
 - **Props**: `value`, `onChange`, `onSend`, `centered?`
 - **Features**:
+  - Auto-expanding textarea (single line by default, expands vertically up to 200px)
   - Enter key to send (Shift+Enter for newline)
+  - Circular send button positioned inside input field on the right
   - Disabled send button when input empty
   - Different styling for centered vs. bottom position
+  - Sticky to bottom on mobile/desktop
+  - 16px minimum font size to prevent iOS zoom
 
 #### MessageBubble
 - **Props**: `message: Message`
 - **Features**:
-  - Role-based styling (user vs assistant)
+  - **User messages**: Right-aligned bubble with slate-700 background
+  - **Assistant messages**: Full-width plain text (no bubble), content-focused
   - Uppercase role labels
-  - Citation display for assistant messages
-  - Rounded corners (xl) with padding
+  - Clickable inline citations for assistant messages
+  - Citation clicks scroll to and highlight the source
+
+#### ChatHeader
+- **Props**: `onReturnHome: () => void`, `onToggleSidebar?: () => void`
+- **Features**:
+  - Sticky to top of viewport
+  - Hamburger menu button (mobile only)
+  - Clickable title to return home
+  - "+ New Conversation" button
+  - Responsive sizing (compact on mobile, larger on desktop)
 
 #### CitationList
 - **Props**: `citations: Citation[]`
 - **Features**:
+  - Auto-scroll into view when expanded on mobile
+  - Scroll margin to account for sticky header
   - Border separator from main content
   - Card-based citation display
   - Blue numbered references
@@ -351,6 +369,27 @@ npm start
 - Inline citation links to PubMed Central
 - Copy message to clipboard
 - Delete conversation from sidebar
+
+## Mobile Responsiveness
+
+The UI is fully responsive with mobile-first design considerations:
+
+### Mobile Breakpoint: < 768px (md: in Tailwind)
+
+**Key Mobile Adaptations:**
+- **Sidebar**: Full-width drawer overlay (256px) with dark backdrop, slides in from left
+- **Header**: Compact (py-3), smaller text, hamburger menu button visible
+- **Input**: Sticky to bottom, auto-expanding textarea, circular send button
+- **Messages**: User bubbles on right, assistant text full-width
+- **First Message**: Auto-scrolls to top accounting for sticky header
+- **Citations**: Auto-scroll into view when expanded
+- **Font Sizes**: 16px minimum on inputs to prevent iOS zoom
+
+**Desktop Behavior (>= 768px):**
+- **Sidebar**: Static positioning, collapsible (48px ↔ 256px)
+- **Header**: Larger (py-4), no hamburger menu
+- **Input**: Sticky to bottom, same textarea behavior
+- **Layout**: More spacious with larger fonts
 
 ## Phase 2 Enhancements
 - Conversation persistence (database instead of in-memory)

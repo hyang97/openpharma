@@ -24,12 +24,24 @@ export function CitationList({ citations }: CitationListProps) {
     }
   }, [])
 
+  // Auto-scroll when citations expand
+  useEffect(() => {
+    if (showCitations) {
+      setTimeout(() => {
+        const citationSection = document.getElementById('citation-section')
+        if (citationSection) {
+          citationSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 100)
+    }
+  }, [showCitations])
+
   if (!citations || citations.length === 0) {
     return null
   }
 
   return (
-    <div className="mt-4 pt-4 border-t border-slate-600">
+    <div id="citation-section" className="mt-4 pt-4 border-t border-slate-600 scroll-mt-20">
       <button
         onClick={() => setShowCitations(!showCitations)}
         className="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1 mb-3"
