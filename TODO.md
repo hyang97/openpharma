@@ -15,6 +15,15 @@ Last updated: 2025-10-23
 - [x] Debug and fix Turn 2+ citation generation regression (hybrid retrieval complexity issue)
 - [x] Add UI animations (message fade-in, citation expand/collapse, sidebar transitions)
 - [x] Deploy to production (Cloudflare Tunnel + Vercel)
+- [x] Configure API_URL environment variable in UI
+- [x] Make UI mobile-responsive
+  - [x] Update sidebar to overlay on mobile screens with backdrop
+  - [x] Update ChatHeader for mobile layout (hamburger menu, responsive text)
+  - [x] Update ChatInput with responsive padding/sizing
+  - [x] Update page.tsx layout for mobile screens (responsive title, wiring)
+  - [x] Add mobile hamburger menu to landing page
+  - [x] Fix sidebar collapse/expand button alignment (desktop and mobile)
+  - [x] Test mobile responsiveness with Chrome DevTools MCP
 - [ ] Share with 5-10 friends for feedback
 - [ ] Set up RAGAS evaluation framework
 - [ ] Optimize response time to < 30 seconds (deferred to Phase 2 with Gemini)
