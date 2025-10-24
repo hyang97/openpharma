@@ -8,7 +8,7 @@ type MessageListProps = {
 
 export function MessageList({ messages, isLoading }: MessageListProps) {
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6 scroll-mt-20 md:scroll-mt-0">
       {messages.map((msg, index) => (
         <MessageBubble key={index} message={msg} />
       ))}

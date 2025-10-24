@@ -78,6 +78,15 @@ export default function Chat() {
     }
     setMessages([...messages, userMessage])
 
+    // Scroll to header height when first message is sent (mobile only)
+    if (messages.length === 0 && window.innerWidth < 768) {
+      setTimeout(() => {
+        const header = document.querySelector('header') || document.querySelector('[class*="sticky"]')
+        const headerHeight = header?.getBoundingClientRect().height || 60
+        window.scrollTo({ top: headerHeight, behavior: 'smooth' })
+      }, 100)
+    }
+
     // Call FastAPI endpoint
     setIsLoading(true)
     try {
@@ -144,7 +153,7 @@ export default function Chat() {
             {/* Mobile hamburger menu for landing page */}
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="md:hidden fixed top-4 left-4 p-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors z-30 shadow-lg"
+              className="md:hidden fixed top-4 left-4 w-10 h-10 flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors z-30 shadow-lg"
               aria-label="Toggle sidebar"
             >
               <span className="text-2xl text-slate-300">☰</span>
