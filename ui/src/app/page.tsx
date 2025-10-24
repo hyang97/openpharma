@@ -15,12 +15,13 @@ export default function Chat() {
   const [currConversationId, setCurrConversationId] = useState<string | null>(null) // State: current conversation, initialized to NULL to disallow ''
   const [allConversationSumm, setAllConversationSumm] = useState<ConversationSummary[]>([])
   const [currCitations, setCurrCitations] = useState<Citation[]>([])
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://localhost:8000'
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false) // State: sidebar open/closed on mobile
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
   // Fetch conversations from backend
   const fetchConversations = async () => {
     try {
-      const response = await fetch('http://localhost:8000/conversations')
+      const response = await fetch(`${API_URL}/conversations`)
       const data = await response.json()
       setAllConversationSumm(data)
     } catch (error) {
@@ -35,7 +36,7 @@ export default function Chat() {
 
   const handleResumeConversation = async (conversationId: string) => {
     try {
-      const response = await fetch(`http://localhost:8000/conversations/${conversationId}`)
+      const response = await fetch(`${API_URL}/conversations/${conversationId}`)
       const data = await response.json()
 
       // Set conversation ID
@@ -46,6 +47,9 @@ export default function Chat() {
 
       // Set conversation-wide citations
       setCurrCitations(data.citations)
+
+      // Close sidebar on mobile after selecting conversation
+      setIsSidebarOpen(false)
     } catch (error) {
       console.error('Error resuming conversation:', error)
     }
@@ -77,7 +81,7 @@ export default function Chat() {
     // Call FastAPI endpoint
     setIsLoading(true)
     try {
-      const response = await fetch('http://localhost:8000/chat', {
+      const response = await fetch(`${API_URL}/chat`, {
         method: 'POST',
         headers:{
           'Content-Type': 'application/json'
@@ -123,11 +127,13 @@ export default function Chat() {
 
   return (
     <div className="flex h-screen bg-slate-900">
-      {/* Sidebar - always visible */}
+      {/* Sidebar */}
       <ConversationSidebar
         conversations={allConversationSumm}
         currentConversationId={currConversationId}
         onSelectConversation={handleResumeConversation}
+        isOpen={isSidebarOpen}
+        onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
       />
 
       {/* Main content area */}
@@ -135,8 +141,17 @@ export default function Chat() {
         {messages.length === 0 ? (
           // Empty state: centered input
           <div className="flex-1 flex flex-col items-center justify-center px-4">
-            <h1 className="text-6xl font-bold mb-4 text-white">OpenPharma</h1>
-            <p className="text-lg text-slate-400 mb-12">Your on-demand pharmaceutical research analyst</p>
+            {/* Mobile hamburger menu for landing page */}
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="md:hidden fixed top-4 left-4 p-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors z-30 shadow-lg"
+              aria-label="Toggle sidebar"
+            >
+              <span className="text-2xl text-slate-300">☰</span>
+            </button>
+
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-4 text-white text-center">OpenPharma</h1>
+            <p className="text-base sm:text-lg text-slate-400 mb-8 sm:mb-12 text-center">Your on-demand pharmaceutical research analyst</p>
             <div className="w-full max-w-3xl">
               <ChatInput value={input} onChange={setInput} onSend={handleSend} centered={true} />
             </div>
@@ -144,9 +159,12 @@ export default function Chat() {
         ) : (
           // Messages exist: normal layout with input at bottom
           <>
-            <ChatHeader onReturnHome={handleReturnHome} />
+            <ChatHeader
+              onReturnHome={handleReturnHome}
+              onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+            />
             <div className="flex-1 overflow-y-auto">
-              <div className="max-w-4xl mx-auto">
+              <div className="max-w-4xl mx-auto px-4 sm:px-6">
                 <MessageList messages={messages} isLoading={isLoading}/>
                 <CitationList citations={currCitations} />
               </div>
