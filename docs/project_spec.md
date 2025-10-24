@@ -32,11 +32,11 @@ User interacts with OpenPharma through a clean, intuitive, two-panel interface, 
 
 ## 2. Development Plan
 
-### **Phase 1: Research Literature Intelligence MVP (Weeks 1-4)**
+### **Phase 1: Research Literature Intelligence MVP (COMPLETE)**
 
-**Current Implementation Focus:** Diabetes research (changed from cancer for initial development). Initial database contains full-text articles for the keyword "diabetes" from PubMed Central from the last 5 years.
+**Implementation:** Diabetes research focus. Database contains 52,014 full-text articles for the keyword "diabetes" from PubMed Central from the last 5 years (1.89M chunks, 768d embeddings).
 
-**Status:** Implementing 4-phase decoupled ingestion pipeline. See `docs/ingestion_pipeline.md` for technical architecture.
+**Status:** ✅ Phase 1 complete - deployed to production with full RAG system, Next.js UI, and mobile responsiveness. See `archive/TODO_completed_20251024.md` for full completion details.
 
 #### Business Capabilities
 - **Core Use Case:** "What are the latest diabetes treatment efficacy results from clinical studies?"
@@ -137,39 +137,48 @@ Cloud Monitoring (observability)
 | **Monitoring** | Cloud Monitoring | Built-in GCP, free tier sufficient |
 
 #### Key Features
-1. **React Chat Interface** *(Implemented)*
+1. **React Chat Interface** ✅ *(Complete)*
    - Next.js 15 + TypeScript dark-themed UI
-   - Centered input on empty state (like OpenEvidence)
-   - Real-time loading indicators
-   - Clickable header to return home
+   - Fully mobile-responsive with touch-optimized interactions
+   - Collapsible sidebar for conversation management
+   - Real-time loading indicators and animations
+   - Sticky header and input on mobile
    - See `docs/ui_design.md` for complete design documentation
 
-2. **Conversational RAG Interface** *(Implemented)*
+2. **Conversational RAG Interface** ✅ *(Complete)*
    - Natural language queries about research findings
-   - Semantic search over research paper sections
+   - Semantic search over research paper sections (top-20 chunks)
    - LLM synthesis with inline citations [1], [2], etc.
-   - <30 second response time (p95)
-   - Multi-turn conversation support *(Planned Phase 1)*
-   - Query rewriting for better retrieval *(Planned Phase 1)*
+   - Multi-turn conversation support with hybrid retrieval
+   - Conversation-wide citation numbering
+   - Current performance: 18-40s responses (97% LLM, 3% retrieval)
+   - Query rewriting and reranking planned for Phase 2
 
-3. **Verifiable Citations** *(Implemented)*
+3. **Verifiable Citations** ✅ *(Complete)*
    - Every claim linked to source paper with sequential numbering
-   - Citation cards showing journal, PMC ID, paper title
-   - Click-through to PubMed Central *(Planned Phase 1)*
-   - Copy message to clipboard *(Planned Phase 1)*
-   - Regenerate response button *(Planned Phase 1)*
-   - 95%+ citation accuracy target
+   - Citation cards showing journal, PMC ID, paper title, excerpt
+   - Expandable/collapsible citation details
+   - Chunk-level citation tracking with immutable Citation objects
+   - Click-through to PubMed Central *(Planned Phase 2)*
+   - Citation accuracy measurement pending RAGAS evaluation
 
-4. **4-Phase Decoupled Ingestion Pipeline**
-   - Phase 1: Collect PMC IDs from PubMed searches
-   - Phase 2: Fetch and parse full-text papers
-   - Phase 3: Token-based chunking (512 tokens, 50-token overlap) with section-aware processing
-   - Phase 4: Generate embeddings with Ollama (free, 768d)
-   - Each phase is independently resumable and stores persistent state
+4. **4-Phase Decoupled Ingestion Pipeline** ✅ *(Complete)*
+   - Stage 1: Collect PMC IDs from PubMed searches
+   - Stage 2: Fetch and parse full-text papers (JATS XML)
+   - Stage 3: Token-based chunking (512 tokens, 50-token overlap) with section-aware processing
+   - Stage 4: Generate embeddings with Ollama (free, 768d)
+   - Each stage is independently resumable and stores persistent state
+   - 52,014 papers fully ingested (1.89M chunks with embeddings)
    - See `docs/ingestion_pipeline.md` for complete architecture
 
-5. **Evaluation & Quality Assurance**
-   - RAGAS evaluation framework (faithfulness, answer relevancy, context recall)
+5. **Production Deployment** ✅ *(Complete)*
+   - Backend API via Cloudflare Tunnel (self-hosted)
+   - Frontend via Vercel (serverless)
+   - Database self-hosted via Cloudflare Tunnel
+   - Cost: ~$0/month for demo (all self-hosted)
+
+6. **Evaluation & Quality Assurance** ⏳ *(Planned)*
+   - RAGAS evaluation framework implementation (next priority)
    - Citation accuracy measurement and tracking
    - Response quality metrics and automated testing
    - Performance benchmarking and optimization

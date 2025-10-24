@@ -1,35 +1,10 @@
 # OpenPharma TODO List
 
-Last updated: 2025-10-23
+Last updated: 2025-10-24
 
-## Current Sprint: Phase 1 Demo Deployment
+## Current Sprint: User Feedback & Evaluation
 
 ### Active Tasks
-- [x] Implement semantic search retrieval (top-K similarity search)
-- [x] Build LLM generation with citation tracking
-- [x] Implement multi-turn conversation support with conversation-wide citation numbering
-- [x] Create Next.js conversational UI with collapsible sidebar
-- [x] Fix citation format consistency (store PMC IDs internally, renumber for display only)
-- [x] Add performance timing instrumentation
-- [x] Refactor citation flow: immutable Citations, chunk-level tracking, centralized data models
-- [x] Debug and fix Turn 2+ citation generation regression (hybrid retrieval complexity issue)
-- [x] Add UI animations (message fade-in, citation expand/collapse, sidebar transitions)
-- [x] Deploy to production (Cloudflare Tunnel + Vercel)
-- [x] Configure API_URL environment variable in UI
-- [x] Make UI mobile-responsive and polish UX
-  - [x] Update sidebar to overlay on mobile screens with backdrop
-  - [x] Update ChatHeader for mobile layout (hamburger menu, responsive text)
-  - [x] Update ChatInput with responsive padding/sizing and auto-expanding textarea
-  - [x] Update page.tsx layout for mobile screens (responsive title, wiring)
-  - [x] Add mobile hamburger menu to landing page
-  - [x] Fix sidebar collapse/expand button alignment (desktop and mobile)
-  - [x] Make ChatHeader and ChatInput sticky (top/bottom) on mobile
-  - [x] Update message bubbles (user messages only, assistant messages as plain text)
-  - [x] Fix iOS zoom issue with 16px minimum font size
-  - [x] Add auto-scroll for citations expansion on mobile
-  - [x] Add auto-scroll to top when first message sent on mobile
-  - [x] Update page title and meta tags
-  - [x] Test mobile responsiveness with Chrome DevTools MCP
 - [ ] Share with 5-10 friends for feedback
 - [ ] Set up RAGAS evaluation framework
 - [ ] Optimize response time to < 30 seconds (deferred to Phase 2 with Gemini)
@@ -108,17 +83,19 @@ Last updated: 2025-10-23
 
 ## Completed Milestones
 
-See `archive/TODO_completed_20251014.md` for detailed history.
+See archived TODO files for detailed completion history:
+- `archive/TODO_completed_20251024.md` - Phase 1 Demo Deployment (RAG, UI, Mobile, Production)
+- `archive/TODO_completed_20251014.md` - Ingestion Pipeline & Ollama Migration
+
+**Phase 1 Demo Deployment (COMPLETE):**
+- Full RAG system with semantic search, LLM generation, and citation tracking
+- Next.js UI with dark theme, mobile responsiveness, and polished UX
+- Multi-turn conversation support with conversation-wide citation numbering
+- Production deployment via Cloudflare Tunnel + Vercel
+- Performance: 18-40s responses (97% LLM, 3% retrieval)
 
 **Phase 1 Ingestion Pipeline (COMPLETE):**
 - 4-stage decoupled pipeline implemented and fully executed
 - 52,014 diabetes papers: collected → fetched → chunked → embedded
 - 1.89M chunks with 768d Ollama embeddings (100% complete)
-- Comprehensive documentation and test suite
 - Total cost: $0 (all self-hosted with Ollama)
-
-**Ollama Migration:**
-- Migrated from OpenAI (1536d, paid) to Ollama (768d, free)
-- Schema updated, code simplified, docs updated
-- Performance benchmarked: sequential processing recommended
-- Successfully embedded entire 52K paper corpus

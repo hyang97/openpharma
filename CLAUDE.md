@@ -10,11 +10,12 @@ OpenPharma is an AI-powered strategic intelligence engine for pharmaceutical com
 
 The project follows a phased development approach across three phases:
 
-### Phase 1: Research Literature Intelligence MVP (Current)
+### Phase 1: Research Literature Intelligence MVP (COMPLETE)
 - **Tech Stack**: Next.js/React UI, FastAPI backend, Ollama Llama 3.1 8B/OpenAI GPT-4 (configurable), Local Postgres + pgvector
 - **Primary Data Source**: PubMed Central Open Access (diabetes research focus, 52K papers fully ingested)
 - **Core Capability**: Multi-turn conversational RAG interface with conversation-wide citation numbering
-- **Status**: ✅ RAG pipeline implemented, ✅ React UI with collapsible sidebar, ✅ Multi-turn conversations, ⏳ Performance optimization & RAGAS evaluation pending
+- **Status**: ✅ Complete - Deployed to production (Cloudflare Tunnel + Vercel), ✅ Full RAG pipeline, ✅ Mobile-responsive UI, ✅ Multi-turn conversations
+- **Next Steps**: User feedback collection, RAGAS evaluation setup, performance optimization
 
 ### Phase 2: Multi-Domain Intelligence Platform
 - **Tech Stack**: FastAPI + LangChain/LangGraph for agent orchestration, Postgres JSONB for relationships
@@ -36,13 +37,16 @@ The project follows a phased development approach across three phases:
 - **Performance**: 18-40s response time (97% LLM generation, 3% retrieval)
 - See `app/rag/generation.py` for implementation
 
-### React UI (Implemented)
+### React UI (Complete)
 - **Framework**: Next.js 15 + TypeScript + Tailwind CSS
 - **Design**: Dark theme (slate + cobalt blue) with collapsible sidebar for conversation management
-- **Components**: Modular components (ChatHeader, MessageList, MessageBubble, CitationList, ChatInput, Sidebar)
+- **Components**: Modular components (ChatHeader, MessageList, MessageBubble, CitationList, ChatInput, ConversationSidebar)
 - **State Management**: React useState in main page component
 - **Features**: Multi-turn conversations, conversation-wide citation numbering, loading indicators, collapsible sidebar
+- **Mobile**: Fully responsive with overlay sidebar, sticky header/input, touch-optimized interactions
+- **Animations**: Message fade-in, citation expand/collapse, sidebar transitions, smooth scrolling
 - **Shared Types**: `src/types/message.ts` for Message and Citation types
+- **Deployment**: Frontend on Vercel, backend API via Cloudflare Tunnel
 - See `docs/ui_design.md` for complete design documentation
 
 ### Data Processing
@@ -60,12 +64,13 @@ The project follows a phased development approach across three phases:
 - UNIQUE constraint on (source, source_id) for deduplication
 - See `docs/data_design.md` for detailed schema
 
-### Ingestion Pipeline (4 Decoupled Stages)
+### Ingestion Pipeline (4 Decoupled Stages - Complete)
 1. **Collect IDs**: `scripts/stage_1_collect_ids.py` → PubMed search → store PMC IDs
 2. **Fetch Papers**: `scripts/stage_2_fetch_papers.py` → XML fetch/parse → UPSERT documents
 3. **Chunk Documents**: `scripts/stage_3_chunk_papers.py` → tokenize → create chunks
 4. **Embed Chunks**: `scripts/stage_4_embed_chunks.py` → Ollama embeddings → update vectors
 
+**Status**: 52,014 papers fully ingested → 1.89M chunks with 768d embeddings (100% complete)
 Each stage is independently resumable and idempotent. See `docs/ingestion_pipeline.md`.
 
 ## Common Commands Reference
@@ -128,11 +133,14 @@ This is a learning-focused AI engineering project optimized for hands-on experie
     - DO NOT write code unless explicitly asked
     - Help debug and review user's code
 13. **End-of-Session Workflow**: When the user asks to wrap up:
-    - Update `TODO.md` to mark completed tasks and add any new tasks discovered during the session
+    - Archive completed tasks from `TODO.md` to `archive/TODO_completed_YYYYMMDD.md`
+    - Update `TODO.md` to remove completed tasks and add any new tasks discovered during the session
     - Review all code changes made during the session
     - Update all relevant design docs in `docs/` to reflect implementation changes
+    - Update `CLAUDE.md` and `docs/project_spec.md` to reflect current project state
     - Create a git commit with a one-line message summarizing the session's work (NO multi-line messages)
 14. **Update Docs at Session End Only**: Do NOT update design docs incrementally during implementation - only update them at the end of the session during wrap-up.
+15. **Task Archival**: When major milestones are completed, archive detailed task lists to `archive/TODO_completed_YYYYMMDD.md` before removing from TODO.md. This preserves achievement history for learning and future reference.
 
 ## Code Structure
 
@@ -148,9 +156,13 @@ app/
 │   ├── chunker.py          # Token-based section-aware chunking
 │   └── embeddings.py       # Ollama embedding generation
 ├── rag/
-│   ├── __init__.py         # Exports RAGResponse, Citation
-│   └── generation.py       # RAG generation with citation extraction
-├── retrieval.py            # Semantic search via pgvector
+│   ├── __init__.py              # Exports RAGResponse, Citation
+│   ├── generation.py            # RAG generation with citation extraction
+│   └── conversation_manager.py  # Multi-turn conversation state management
+├── retrieval/
+│   ├── __init__.py              # Exports search functions
+│   └── semantic_search.py       # Hybrid semantic search via pgvector
+├── models.py               # Pydantic models for API (RAGResponse, Citation, Message, Conversation)
 ├── logging_config.py       # Centralized logging configuration
 └── main.py                 # FastAPI application with /ask endpoint
 
@@ -161,11 +173,12 @@ ui/
 │   │   ├── layout.tsx      # Root layout
 │   │   └── globals.css     # Global Tailwind styles
 │   ├── components/
-│   │   ├── ChatHeader.tsx  # Header with clickable home button
-│   │   ├── MessageList.tsx # Message container with loading state
-│   │   ├── MessageBubble.tsx # Individual message display
-│   │   ├── CitationList.tsx  # Citation cards
-│   │   └── ChatInput.tsx   # Input field with send button
+│   │   ├── ChatHeader.tsx         # Header with hamburger menu (mobile-responsive)
+│   │   ├── MessageList.tsx        # Message container with loading state
+│   │   ├── MessageBubble.tsx      # Individual message display (user bubbles only)
+│   │   ├── CitationList.tsx       # Expandable citation cards
+│   │   ├── ChatInput.tsx          # Auto-expanding input with send button
+│   │   └── ConversationSidebar.tsx # Collapsible conversation history sidebar
 │   └── types/
 │       └── message.ts      # Shared TypeScript types
 ├── package.json
@@ -179,20 +192,31 @@ scripts/
 
 docs/
 ├── project_spec.md         # Project specification and requirements
-├── ui_design.md            # UI design documentation (NEW)
+├── ui_design.md            # UI design documentation
+├── rag.md                  # RAG pipeline architecture and implementation
 ├── ingestion_pipeline.md   # 4-stage decoupled pipeline architecture
 ├── data_design.md          # Database schema and storage strategy
-├── decisions.md            # Architecture decision log (NEW)
+├── decisions.md            # Architecture decision log
+├── use_cases.md            # User stories and use cases
 ├── embedding_service.md    # EmbeddingService API reference
 ├── logging.md              # Logging guide and best practices
 └── cheatsheet.md           # Common commands reference
 
 tests/
-├── test_pipeline.py        # Integration tests for ingestion pipeline
-└── test_generation.py      # Unit tests for citation extraction (NEW)
+├── test_pipeline.py           # Integration tests for ingestion pipeline
+├── test_refactored_flow.py    # End-to-end RAG flow tests
+├── test_hybrid_retrieval.py   # Multi-turn retrieval tests
+├── test_heading_stripping.py  # Citation extraction tests
+├── test_data_integrity.py     # Database health checks
+├── test_embedding_performance.py # Embedding performance benchmarks
+└── validate_embeddings.py     # Embedding quality validation
 
-archive/                    # Archived/outdated files (code, docs, configs)
-data/batches/               # Batch API files (gitignored)
+archive/                       # Archived/outdated files (code, docs, configs, completed TODOs)
+  ├── TODO_completed_20251024.md # Phase 1 Demo Deployment completion archive
+  ├── TODO_completed_20251014.md # Ingestion Pipeline & Ollama Migration archive
+  └── logs_20251023/             # Archived log files from cleanup
+data/                          # Reserved for batch API files (gitignored)
+backups/                       # Database backups (gitignored)
 ```
 
 ## Data Sources and Integration
