@@ -7,10 +7,26 @@ SCHEMA OVERVIEW
 TABLE: pubmed_papers - Tracks discovered PMC IDs and fetch status
 -------------------------------------------------------------------------------
 pmc_id            VARCHAR       PRIMARY KEY        "1234567" (numeric only)
+pmid              BIGINT                           PubMed ID (NULL=not fetched, -1=no PMID found)
+doi               TEXT                             DOI (from NCBI API)
+nih_percentile    FLOAT                            NIH percentile (NULL=not queried, -1=no data, >=0=actual)
+publication_year  INTEGER                          Publication year (NULL=not queried, -1=no data, >0=actual)
+citation_count    INTEGER                          Total citations (NULL=not queried, -1=no data, >=0=actual)
+relative_citation_ratio FLOAT                      RCR: field-adjusted citation metric (NULL=not queried, -1=no data, >=0=actual)
+is_clinical       BOOLEAN                          Clinical article (NULL=not queried or no data, True/False=actual)
+is_research_article BOOLEAN                        Research article (NULL=not queried or no data, True/False=actual)
 discovered_at     TIMESTAMP     DEFAULT NOW()
-fetch_status      VARCHAR       DEFAULT 'pending'  'pending' | 'fetched' | 'failed'
+fetch_status      VARCHAR       DEFAULT 'pending'  'pending' | 'wont_fetch' | 'fetched' | 'failed'
+
+SENTINEL VALUES (numeric/float only): -1 = "queried but no data available", NULL = "not yet queried"
+BOOLEAN FIELDS: NULL = "not queried or no data", True/False = "actual value"
 
 INDEX: idx_pubmed_papers_fetch_status ON fetch_status
+INDEX: idx_pubmed_papers_pmid ON pmid
+INDEX: idx_pubmed_papers_percentile ON nih_percentile
+INDEX: idx_pubmed_papers_year ON publication_year
+INDEX: idx_pubmed_papers_citation_count ON citation_count
+INDEX: idx_pubmed_papers_rcr ON relative_citation_ratio
 
 
 TABLE: documents - Research papers and regulatory documents
@@ -65,26 +81,59 @@ error_message      TEXT                             Error details if failed
 
 INDEX: idx_openai_batches_status ON status
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, func, UniqueConstraint, Index
+from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, Float, Boolean, func, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from pgvector.sqlalchemy import Vector
 from .database import Base
 
 
 class PubMedPaper(Base):
-    """Tracks discovered PMC IDs and whether they've been fetched."""
+    """Tracks discovered PMC IDs and whether they've been fetched.
+
+    NOTE: Citation metric columns (nih_percentile, citation_count, etc.) are DEPRECATED.
+    These columns exist for backward compatibility but are NOT maintained going forward.
+    Always use JOIN with icite_metadata table for citation filtering.
+
+    Sentinel values for ID mapping:
+        - pmid = -1: Looked up via NCBI API but no PMID found (invalid/non-existent PMC ID)
+        - pmid = NULL: Not yet queried
+
+    Citation metric columns (DEPRECATED - do not use):
+        - nih_percentile, citation_count, publication_year, relative_citation_ratio
+        - is_clinical, is_research_article
+        - These are partially populated but NOT maintained
+        - Use JOIN with icite_metadata instead: filter_by_metrics() does this automatically
+    """
     __tablename__ = "pubmed_papers"
 
     # Primary key
     pmc_id = Column(String, primary_key=True, index=True)
 
+    # ID mapping (PMC <-> PMID conversion)
+    pmid = Column(Integer)  # BIGINT in Postgres, NULL = not fetched, -1 = no PMID found
+    doi = Column(Text)      # DOI from NCBI API
+
+    # Citation metrics (DEPRECATED - use JOIN with icite_metadata instead)
+    # These columns are partially populated but NOT maintained going forward
+    nih_percentile = Column(Float)              # DEPRECATED: Use icite_metadata.nih_percentile
+    publication_year = Column(Integer)           # DEPRECATED: Use icite_metadata.year
+    citation_count = Column(Integer)             # DEPRECATED: Use icite_metadata.citation_count
+    relative_citation_ratio = Column(Float)      # DEPRECATED: Use icite_metadata.relative_citation_ratio
+    is_clinical = Column(Boolean)                # DEPRECATED: Use icite_metadata.is_clinical
+    is_research_article = Column(Boolean)        # DEPRECATED: Use icite_metadata.is_research_article
+
     # Tracking fields
     discovered_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    fetch_status = Column(String, default='pending', nullable=False)  # 'pending', 'fetched', 'failed'
+    fetch_status = Column(String, default='pending', nullable=False)  # 'pending', 'wont_fetch', 'fetched', 'failed'
 
     # Indexes
     __table_args__ = (
         Index('idx_pubmed_papers_fetch_status', 'fetch_status'),
+        Index('idx_pubmed_papers_pmid', 'pmid'),
+        Index('idx_pubmed_papers_percentile', 'nih_percentile'),
+        Index('idx_pubmed_papers_year', 'publication_year'),
+        Index('idx_pubmed_papers_citation_count', 'citation_count'),
+        Index('idx_pubmed_papers_rcr', 'relative_citation_ratio'),
     )
 
     def __repr__(self):
@@ -217,3 +266,75 @@ class OpenAIBatch(Base):
 
     def __repr__(self):
         return f"<OpenAIBatch(id={self.openai_batch_id}, status={self.status}, chunks={self.chunk_count})>"
+
+
+class ICiteMetadata(Base):
+    """NIH iCite citation metrics for PubMed papers (imported from NIH snapshot)."""
+    __tablename__ = "icite_metadata"
+
+    # Primary key
+    pmid = Column(BigInteger, primary_key=True)  # PubMed ID
+
+    # Basic metadata
+    doi = Column(Text)                            # Digital Object Identifier
+    title = Column(Text)                          # Article title
+    authors = Column(Text)                        # Comma-separated author names
+    year = Column(Integer)                        # Publication year
+    journal = Column(Text)                        # Journal name (ISO abbreviation)
+    is_research_article = Column(Boolean)         # True if primary research article
+
+    # Citation metrics
+    citation_count = Column(Integer)                    # Total number of citations
+    field_citation_rate = Column(Float)                 # Intrinsic citation rate of paper's field
+    expected_citations_per_year = Column(Float)         # Expected citations for NIH papers in same field
+    citations_per_year = Column(Float)                  # Actual citations per year since publication
+    relative_citation_ratio = Column(Float)             # RCR: field-adjusted citation metric (NIH median = 1.0)
+    nih_percentile = Column(Float)                      # Percentile rank vs all NIH papers (99 = top 1%)
+
+    # Translation metrics (Human/Animal/Molecular-Cellular classification)
+    human = Column(Float)                         # Fraction of MeSH terms in Human category
+    animal = Column(Float)                        # Fraction of MeSH terms in Animal category
+    molecular_cellular = Column(Float)            # Fraction of MeSH terms in Molecular/Cellular category
+    x_coord = Column(Float)                       # X coordinate on Triangle of Biomedicine
+    y_coord = Column(Float)                       # Y coordinate on Triangle of Biomedicine
+    apt = Column(Float)                           # Approximate Potential to Translate (ML-based score)
+
+    # Clinical classification
+    is_clinical = Column(Boolean)                 # True if clinical article
+    cited_by_clin = Column(Text)                  # Comma-separated PMIDs of clinical articles citing this
+
+    # Citation network
+    cited_by = Column(Text)                       # Comma-separated PMIDs of all citing articles
+    references = Column(Text)                     # Comma-separated PMIDs in reference list
+
+    # Metadata tracking
+    provisional = Column(Boolean)                 # True if RCR is provisional (paper < 2 years old)
+    last_modified = Column(Text)                  # When iCite last updated this record (stored as text in CSV)
+
+    # Indexes (created by migration script)
+    __table_args__ = (
+        Index('idx_icite_percentile', 'nih_percentile'),
+        Index('idx_icite_year', 'year'),
+        Index('idx_icite_citation_count', 'citation_count'),
+    )
+
+    def __repr__(self):
+        return f"<ICiteMetadata(pmid={self.pmid}, percentile={self.nih_percentile}, year={self.year})>"
+
+
+class CitationLink(Base):
+    """Citation network edges from NIH Open Citation Collection."""
+    __tablename__ = "citation_links"
+
+    # Composite primary key
+    citing = Column(BigInteger, primary_key=True)      # PMID of citing paper
+    referenced = Column(BigInteger, primary_key=True)  # PMID of referenced paper
+
+    # Indexes (created by migration script)
+    __table_args__ = (
+        Index('idx_citation_links_citing', 'citing'),
+        Index('idx_citation_links_cited', 'referenced'),
+    )
+
+    def __repr__(self):
+        return f"<CitationLink(citing={self.citing}, referenced={self.referenced})>"

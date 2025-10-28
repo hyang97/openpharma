@@ -2,6 +2,8 @@
 
 AI-powered search engine for diabetes research literature from PubMed Central.
 
+**Disclaimer:** This is currently a personal learning project, use information at personal and professional risk. Enjoy and have fun!
+
 ## What is this?
 
 A learning project building a RAG (Retrieval Augmented Generation) system that:

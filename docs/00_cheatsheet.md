@@ -143,14 +143,30 @@ docker-compose run --rm -d --name api-embed api bash -c "python -m scripts.stage
 
 ## Testing
 
+### Reranking Evaluation
+```bash
+# View test questions
+docker-compose exec api python -m tests.reranking_eval_questions --quick
+
+# Run quick eval (5 questions, ~15-20 min)
+docker-compose exec api python -m tests.run_reranking_eval --quick
+
+# Run full eval (12 questions, ~30-40 min)
+docker-compose exec api python -m tests.run_reranking_eval
+
+# Results saved to: tests/reranking_eval_results_TIMESTAMP.json
+# Use tests/reranking_eval_judge_prompt.md with Gemini to evaluate
+```
+
+### Other Tests
 ```bash
 # Run tests
 docker-compose exec api python -m tests.test_generation
 
 # Test API endpoint
-curl -X POST http://localhost:8000/ask \
+curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"question": "What is metformin?", "use_local": true}'
+  -d '{"user_message": "What is metformin?", "use_local": true, "use_reranker": false}'
 ```
 
 ## Deployment (Production)

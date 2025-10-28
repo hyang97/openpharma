@@ -104,6 +104,7 @@ def generate_response(
     top_k: int = 20,
     top_n: int = 5,
     use_local: bool = True,
+    use_reranker: bool = False,
     conversation_history: Optional[List[dict]] = None
 ) -> RAGResponse:
     """
@@ -115,6 +116,7 @@ def generate_response(
         top_k: Number of chunks to retrieve (default: 20)
         top_n: Number of chunks to use in generation (default: 5)
         use_local: Use Ollama if True, OpenAI if False (default: True)
+        use_reranker: Rerank chunks if True, skip reranking step if False (default: False)
         conversation_history: Previous messages for multi-turn conversations
 
     Returns:
@@ -124,13 +126,16 @@ def generate_response(
 
     # Fetch top k chunks
     retrieval_start = time.time()
-    chunks = semantic_search(user_message, top_k=top_k)[:top_n]
+    chunks = semantic_search(user_message, top_k, top_n, use_reranker)
     # chunks = hybrid_retrieval(
     #     query=user_message,
     #     conversation_history=conversation_history,
     #     top_k=top_k,
-    #     top_n=top_n
+    #     top_n=top_n,
+    #     use_reranker
     # )
+    
+
     retrieval_time = (time.time() - retrieval_start) * 1000
     logger.info(f"Retrieval time: {retrieval_time:.0f}ms")
 

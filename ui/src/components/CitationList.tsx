@@ -79,6 +79,11 @@ export function CitationList({ citations }: CitationListProps) {
             </div>
           ))}
         </div>
+
+        {/* Disclaimer */}
+        <p className="text-center text-[10px] sm:text-xs text-slate-500 mt-4 mb-6 px-2 italic">
+          This is currently a personal learning project, use information at personal and professional risk. Enjoy and have fun!
+        </p>
       </div>
     </div>
   )

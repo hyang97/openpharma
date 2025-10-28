@@ -33,11 +33,18 @@ class PubMedFetcher:
         self.timeout = timeout
         self.xml_parser = PMCXMLParser()
 
+        # Log API key status
+        if Entrez.api_key:
+            logger.info("NCBI API key detected - using 10 requests/second rate limit")
+        else:
+            logger.info("No NCBI API key - using 3 requests/second rate limit")
+
     def search_papers(
         self,
         query: str,
         max_results: int = 100,
-        start_index: int = 0
+        start_index: int = 0,
+        counts_only: bool = False
     ) -> List[str]:
         """
         Search PMC Open Access for papers matching query.
@@ -46,22 +53,29 @@ class PubMedFetcher:
             query: PubMed query string
             max_results: Maximum number of PMC IDs to return
             start_index: Starting index for pagination
+            counts_only: If True, return total count instead of IDs
 
         Returns:
             List of PMC IDs (numeric only, e.g., ['1234567', '2345678'])
+            OR single-element list with total count if counts_only=True
         """
         try:
             logger.info(f"Searching PMC (max: {max_results}, start: {start_index})")
             handle = Entrez.esearch(
                 db="pmc",
                 term=query,
-                retmax=max_results,
+                retmax=0 if counts_only else max_results,
                 retstart=start_index,
                 sort="relevance",
                 timeout=self.timeout
             )
             record = Entrez.read(handle)
             handle.close()
+
+            if counts_only:
+                total_count = int(record["Count"])
+                logger.info(f"Total matching papers: {total_count}")
+                return [str(total_count)]  # Return as single-element list for consistency
 
             pmc_ids = record["IdList"]
             logger.info(f"Found {len(pmc_ids)} papers")
@@ -101,7 +115,7 @@ class PubMedFetcher:
 
             # NCBI rate limit: 10 req/sec with API key, 3 req/sec without
             # Use conservative timing to avoid 429 errors (0.15s = ~6.7 req/sec, 0.4s = ~2.5 req/sec)
-            sleep_time = 0.15 if Entrez.api_key else 0.4
+            sleep_time = 0.1 if Entrez.api_key else 0.35
             time.sleep(sleep_time)
 
             # Fetch summary metadata (authors, journal, dates, etc.)

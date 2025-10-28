@@ -98,12 +98,15 @@ python scripts/stage_2_fetch_papers.py --limit 100
 
 # Background (large batches, requires --confirm-large-job to skip prompt)
 nohup python scripts/stage_2_fetch_papers.py --limit 25000 --confirm-large-job > fetch_papers.log 2>&1 &
+
+# Retry failed papers with extended timeout
+python scripts/stage_2_fetch_papers.py --retry-failed --confirm-large-job
 ```
 
 ### What it does
 1. Queries `pubmed_papers` WHERE `fetch_status='pending'` LIMIT batch_size
 2. For each PMC ID:
-   - Fetches full XML from NCBI Entrez efetch API
+   - Fetches full XML from NCBI Entrez efetch API (with timeout wrapper)
    - Parses title, abstract, sections (using `PMCXMLParser`)
    - Fetches metadata from NCBI esummary API (authors, journal, DOI, etc.)
    - UPSERT into `documents` table (source='pmc', source_id=pmc_id)
@@ -112,8 +115,13 @@ nohup python scripts/stage_2_fetch_papers.py --limit 25000 --confirm-large-job >
    - With API key: 0.15s between calls (~6.7 req/sec, ~0.3s per paper)
    - Without API key: 0.4s between calls (~2.5 req/sec, ~0.8s per paper)
    - Actual performance: ~0.6s per paper (~100 papers/minute)
-4. On failure: sets `fetch_status='failed'`, logs error
-5. Large job check (>1000 papers): Warns if not during off-peak hours (weekends or 9pm-5am ET weekdays)
+4. Timeout handling:
+   - Uses ThreadPoolExecutor with configurable timeout (30s default, 120s with `--retry-failed`)
+   - Handles large papers (some exceed 3MB XML) that can hang during fetch
+   - On timeout: abandons stuck thread, marks paper as 'failed', continues with next paper
+   - Prevents pipeline blockage on problematic papers
+5. On failure: sets `fetch_status='failed'`, logs error
+6. Large job check (>1000 papers): Warns if not during off-peak hours (weekends or 9pm-5am ET weekdays)
 
 ### Output
 - Rows in `documents` table with `ingestion_status='fetched'`
@@ -389,3 +397,49 @@ SELECT COUNT(*),
 FROM document_chunks
 WHERE embedding IS NOT NULL;
 ```
+
+## Citation Filtering Workflow (Stage 1.1 & 1.2)
+
+After collecting PMC IDs with `stage_1_collect_ids.py`, you can filter papers by citation metrics before fetching.
+
+### Stage 1.1: Backfill PMIDs
+
+Convert PMC IDs to PMIDs for linking to iCite citation data.
+
+```bash
+# Backfill PMIDs for papers with pmid IS NULL
+docker-compose exec api python -m scripts.stage_1_1_backfill_pmids --limit 50000
+```
+
+**What it does:**
+- Queries NCBI ID Converter API in batches of 200
+- Updates `pubmed_papers.pmid` column
+- Sets `pmid=-1` for papers without PMIDs (preprints, non-PubMed papers)
+
+### Stage 1.2: Set Fetch Status by Citations
+
+Mark high-impact papers for fetching based on NIH iCite percentile.
+
+```bash
+# Select top 1% historical papers (wont_fetch → pending)
+docker-compose exec api python -m scripts.stage_1_2_set_fetch_status \
+  --from-status wont_fetch \
+  --to-status pending \
+  --min-percentile 99 \
+  --min-year 1990 \
+  --max-year 2019
+
+# Dry run to preview
+docker-compose exec api python -m scripts.stage_1_2_set_fetch_status \
+  --from-status wont_fetch \
+  --to-status pending \
+  --min-percentile 95 \
+  --dry-run
+```
+
+**Use cases:**
+- Select top-cited historical papers (reduces dataset from 2.6M → 58K)
+- Deselect low-quality papers (pending → wont_fetch)
+- Retry failed papers (failed → pending)
+
+**Implementation:** Uses `CitationUtils.filter_by_metrics()` with JOIN to `icite_metadata` table

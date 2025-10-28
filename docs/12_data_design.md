@@ -126,44 +126,56 @@ Each phase stores persistent state and can be run independently. The original mo
 
 ### Schema Overview
 
-Three tables support the 4-phase ingestion pipeline:
+Five tables support the system:
 
-| Table | Purpose | Used By |
-|-------|---------|---------|
-| `pubmed_papers` | Track PMC IDs and fetch status | Phase 1 & 2 |
-| `documents` | Store document content and metadata | Phase 2, 3, 4 |
-| `document_chunks` | Store chunks and embeddings | Phase 3 & 4 |
+| Table | Purpose | Size | Notes |
+|-------|---------|------|-------|
+| `pubmed_papers` | Track PMC IDs and fetch status | Small | Ingestion pipeline |
+| `documents` | Store document content and metadata | ~50GB | Core data |
+| `document_chunks` | Store chunks and embeddings | ~50GB | RAG retrieval |
+| `icite_metadata` | Citation metrics for all PubMed papers | ~12GB | Landmark filtering, KOL analysis |
+| `citation_links` | Citation network edges | ~12-18GB | Co-citation analysis, future graph features |
 
 ---
 
 ### Table 1: `pubmed_papers`
 
-Tracks PMC IDs discovered from searches and their fetch status.
+Tracks PMC IDs discovered from searches and their fetch status. Includes PMID for linking to citation data.
 
 ```sql
 CREATE TABLE pubmed_papers (
   pmc_id VARCHAR PRIMARY KEY,                    -- "1234567" (numeric only, no PMC prefix)
   discovered_at TIMESTAMP DEFAULT NOW(),
-  fetch_status VARCHAR DEFAULT 'pending'         -- 'pending', 'fetched', 'failed'
+  fetch_status VARCHAR DEFAULT 'pending',        -- 'pending', 'wont_fetch', 'fetched', 'failed'
+  pmid BIGINT,                                   -- PubMed ID for linking to icite_metadata
+  doi TEXT                                       -- Digital Object Identifier
+  -- Note: Citation metric columns exist but are NOT maintained (see Design Notes)
 );
 
 CREATE INDEX idx_pubmed_papers_fetch_status ON pubmed_papers(fetch_status);
+CREATE INDEX idx_pubmed_papers_pmid ON pubmed_papers(pmid);
 ```
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `pmc_id` | VARCHAR (PK) | Numeric PMC ID (e.g., "1234567"), no "PMC" prefix |
 | `discovered_at` | TIMESTAMP | When PMC ID was first discovered |
-| `fetch_status` | VARCHAR | 'pending', 'fetched', or 'failed' |
+| `fetch_status` | VARCHAR | 'pending', 'wont_fetch', 'fetched', or 'failed' |
+| `pmid` | BIGINT | PubMed ID (for joining with icite_metadata) |
+| `doi` | TEXT | Digital Object Identifier |
 
 **Indexes:**
 - Primary key on `pmc_id`
 - B-tree index on `fetch_status` (for `WHERE fetch_status='pending'` queries)
+- B-tree index on `pmid` (for JOINs with `icite_metadata`)
 
 **Design Notes:**
 - No foreign key to `documents` (application-level enforcement)
 - Relationship: `documents.source_id = pubmed_papers.pmc_id` when `source='pmc'`
 - PMC prefix added only for display: `f"PMC{pmc_id}"`
+- **Citation filtering:** Use JOIN with `icite_metadata` table (not denormalized columns)
+- `pmid` populated via NCBI ID conversion API (Stage 1.1)
+- Table includes citation metric columns (nih_percentile, citation_count, etc.) that are partially populated but NOT maintained going forward - always use `icite_metadata` for filtering
 
 ---
 
@@ -265,6 +277,73 @@ CREATE INDEX idx_chunks_needs_embedding ON document_chunks(document_chunk_id)
 - Embedding generated from: `f"Document: {title}\nSection: {section}\n\n{content}"`
 - Partial index shrinks as embeddings complete (efficient storage)
 - `document_chunk_id` used for Batch API tracking (cleaner than denormalizing source/source_id)
+
+---
+
+### Table 4: `icite_metadata`
+
+Stores citation metrics from NIH iCite database for filtering and KOL analysis.
+
+```sql
+CREATE TABLE icite_metadata (
+    pmid BIGINT PRIMARY KEY,
+    year INTEGER,
+    title TEXT,
+    journal VARCHAR(255),
+    authors TEXT,
+    nih_percentile FLOAT,                    -- Percentile rank vs NIH papers (99 = top 1%)
+    relative_citation_ratio FLOAT,           -- Field-normalized citation metric
+    citation_count INTEGER,                  -- Total times cited
+    citations_per_year FLOAT,
+    is_research_article BOOLEAN,
+    is_clinical BOOLEAN,
+    apt FLOAT,                               -- Approximate Potential to Translate
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_icite_percentile ON icite_metadata(nih_percentile);
+CREATE INDEX idx_icite_year ON icite_metadata(year);
+CREATE INDEX idx_icite_citation_count ON icite_metadata(citation_count);
+```
+
+**Purpose**: Filter papers by citation metrics, identify most-cited authors, enrich RAG responses with citation counts
+
+**Data Source**: NIH iCite Database Snapshot (https://nih.figshare.com/collections/iCite_Database_Snapshots_NIH_Open_Citation_Collection_/4586573)
+
+**Size**: ~12GB for all PubMed papers with citation data
+
+---
+
+### Table 5: `citation_links`
+
+Stores citation network edges for co-citation analysis and KOL identification.
+
+```sql
+CREATE TABLE citation_links (
+    citing BIGINT NOT NULL,                  -- Paper that cites
+    referenced BIGINT NOT NULL,              -- Paper being cited
+    PRIMARY KEY (citing, referenced)
+);
+
+CREATE INDEX idx_citation_links_citing ON citation_links(citing);
+CREATE INDEX idx_citation_links_cited ON citation_links(referenced);
+```
+
+**Purpose**:
+- Identify co-cited papers (papers frequently cited together)
+- Find authors whose work is highly interconnected
+- Enable future graph analysis (Phase 2: can migrate to Neo4j for Graph RAG)
+
+**Data Source**: NIH Open Citation Collection (part of iCite snapshot)
+
+**Size**: ~12-18GB with indexes for ~50M citation relationships
+
+**Phase 1 Use Cases**:
+- SQL queries for 2-hop co-citations
+- Most-cited authors by aggregating citation counts
+- Citation network statistics
+
+**Phase 2 Migration**: Consider Neo4j if building citation network visualizations, multi-hop graph traversals, or Graph RAG
 
 ---
 
