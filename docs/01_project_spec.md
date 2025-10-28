@@ -76,34 +76,44 @@ To validate all Phase 1 use cases, these enhancements will be integrated into th
 * **Storage:** Add to `documents.doc_metadata` JSONB field
 * **Benefit:** Enables filtering by research type, institution, and medical concepts
 
-**Quick Win #2: Targeted "Lookalike" Topic Expansion**
-* **Objective:** Demonstrate platform scalability beyond single disease area with related therapeutic areas.
-* **Implementation:** Run Stage 1 (collect_ids.py) with additional search queries:
-    - **Target Topics:** "Obesity" and "Cardiovascular Disease"
-    - Same 5-year time horizon (2020-2025)
-    - Estimated: ~20K papers per topic
-* **API Call:**
-    ```
-    https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term={"obesity"[MeSH Terms]}&retmax=10000&mindate=2020/01/01&maxdate=2024/12/31
-    ```
-* **Benefit:** Validates cross-disease queries and demonstrates data pipeline reusability
+**Quick Win #2: Targeted Topic Expansion - Obesity**
+* **Objective:** Demonstrate platform scalability with related therapeutic area
+* **Target**: Obesity research (2020-2025) - ~30K papers
+* **Implementation:** Run Stage 1 with query: `obesity[Title/Abstract] AND open access[filter] AND 2020/01/01:2025/12/31[pdat]`
+* **Processing Time:** ~15 hours (fetch/chunk/embed)
+* **Benefit:** Cross-disease queries, validates pipeline reusability, cardiometabolic focus
 
-**Quick Win #3: Landmark Paper Augmentation**
-* **Objective:** Add historical context by ingesting foundational, highly-cited papers that modern research builds upon.
+**Quick Win #3: Landmark Papers (Top 1% Across All Biomedicine)**
+* **Objective:** Add historical context with most influential papers (1990-2020)
+* **Data Source:** NIH iCite Database Snapshot (28.75GB download, includes citation metrics for all PubMed papers)
+* **Filtering Criteria:**
+    - `nih_percentile >= 99` (top 1% by field-normalized citations)
+    - `year >= 1990 AND year <= 2020` (30-year historical window)
+    - Open access only (filtered via NCBI ID Converter)
 * **Implementation:**
-    1. Create new script: `scripts/collect_landmark_papers.py`
-    2. For key drug classes (Metformin, SGLT2i, GLP-1, Insulin, DPP-4i):
-        - Search PubMed for papers from 1990-2020
-        - Query NIH iCite API for citation counts
-        - Select top 20 most-cited papers per class (~100 papers total)
-    3. Insert PMC IDs into `pubmed_papers` table with special flag
-    4. Run normal pipeline (Stages 2-4)
-* **NIH iCite API Call:**
+    1. Download iCite snapshot to `data/icite_2025_09/`
+    2. Import to Postgres: `icite_metadata` (12GB) + `citation_links` (12-18GB)
+    3. Create `CitationFilter` helper in `app/ingestion/citation_filter.py`
+    4. Use with Stage 1 flag: `--filter-citations --percentile 99`
+* **Expected Result:** ~20K-25K landmark papers across all biomedicine
+* **Processing Time:** ~5-8 hours (iCite import) + ~10-12 hours (fetch/chunk/embed)
+* **Storage:** Citation data enables KOL identification, co-citation analysis (2-hop SQL queries)
+* **Benefit:** Historical context, cross-domain discovery, "top 1% most influential biomedical research" positioning
+* **Phase 2 Migration Path:** Can migrate citation data to Neo4j if building Graph RAG or citation network visualizations
+
+**Quick Win #4: Paper Quality Control (`is_active` flag)**
+* **Objective:** Add ability to exclude papers from search without deleting data (e.g., retracted papers, low quality)
+* **Implementation:**
+    1. Add `is_active BOOLEAN DEFAULT true` to `pubmed_papers` table
+    2. Update semantic search to filter `WHERE is_active = true`
+    3. Create admin script to mark papers inactive/active
+* **Schema Change:**
+    ```sql
+    ALTER TABLE pubmed_papers ADD COLUMN is_active BOOLEAN DEFAULT true;
+    CREATE INDEX idx_pubmed_papers_is_active ON pubmed_papers(is_active);
     ```
-    https://icite.od.nih.gov/api/pubs?pmids={PMID1,PMID2,...}
-    ```
-* **Storage:** Add `is_landmark` flag to `documents.doc_metadata`
-* **Benefit:** Enables historical context queries and citation network analysis
+* **Benefit:** Separate ingestion state (`fetch_status`) from inclusion logic (`is_active`), preserves history, easy to reverse
+* **Status:** Future enhancement - not required for MVP
 
 #### System Architecture
 

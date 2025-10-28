@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 import time
 
+from app.retrieval.reranker import rerank_chunks
 from app.models import SearchResult
 from app.db.database import engine
 from app.ingestion.embeddings import EmbeddingService
@@ -21,7 +22,7 @@ logger = get_logger(__name__)
 _embedding_service = None
 
 
-def semantic_search(query: str, top_k: int = 10) -> List[SearchResult]:
+def semantic_search(query: str, top_k: int = 10, top_n: int = 5, use_reranker: bool = False) -> List[SearchResult]:
     """
     Perform semantic search over document chunks.
 
@@ -100,7 +101,16 @@ limit :top_k
         )
         search_results.append(result)
 
-    return search_results
+    # Return top n search result, reranking if use_reranker is set
+    if use_reranker:
+        from app.retrieval.reranker import get_reranker
+        reranker = get_reranker()
+        logger.info(f"  Using reranker model: {reranker.model_name}")
+        top_n_search_results = rerank_chunks(query, search_results, top_n)
+    else:
+        top_n_search_results = search_results[:top_n]
+
+    return top_n_search_results
 
 
 def fetch_chunks_by_chunk_ids(chunk_ids: List[str]) -> Dict[int, SearchResult]:
@@ -154,12 +164,13 @@ def hybrid_retrieval(
         conversation_history: Optional[List[dict]] = None, 
         top_k = 20,
         top_n = 5,
-        max_historical_chunks = 15
+        max_historical_chunks = 15,
+        use_reranker = False
 ) -> List[SearchResult]:
     """Hybrid retrieval, semantic search + most recent historical chunks"""
 
     hybrid_start = time.time()
-    new_chunks = semantic_search(query, top_k=top_k)[:top_n] # fetch top_k and keep top_n most similar
+    new_chunks = semantic_search(query, top_k, top_n, use_reranker)
     
     recent_chunk_ids = []
     seen_chunk_ids = set(chunk.chunk_id for chunk in new_chunks) 

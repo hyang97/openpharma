@@ -8,6 +8,7 @@ import logging
 import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
@@ -134,8 +135,19 @@ IMPORTANT: NCBI requests large jobs (>1000 papers) run during off-peak hours:
         pmc_id = paper.pmc_id
 
         try:
-            # Fetch and parse paper
-            paper_data = fetcher.fetch_paper_details(pmc_id)
+            # Fetch and parse paper with timeout wrapper
+            logger.debug(f"[{idx}/{len(pending_papers)}] Starting fetch for PMC{pmc_id}")
+
+            # Wrap fetch with timeout
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(fetcher.fetch_paper_details, pmc_id)
+            try:
+                paper_data = future.result(timeout=timeout)
+                executor.shutdown(wait=True)
+            except FuturesTimeoutError:
+                logger.error(f"[{idx}/{len(pending_papers)}] Timeout fetching PMC{pmc_id} (exceeded {timeout}s) - abandoning thread")
+                executor.shutdown(wait=False)  # Don't wait for stuck thread
+                paper_data = None
 
             if not paper_data:
                 logger.warning(f"[{idx}/{len(pending_papers)}] Failed to fetch PMC{pmc_id}")

@@ -81,3 +81,40 @@ Key technical decisions made during OpenPharma development.
 - ~300ms added latency from Cloudflare Tunnel (acceptable)
 - 30-50s responses with local Ollama (users understand it's a demo)
 **Next Steps**: After friend feedback, upgrade to Cloud Run + Gemini for 8-10s responses using GCP credits.
+
+## 2025-10-24: Postgres for Citation Data, Defer Graph Database to Phase 2
+**Problem**: Need to store NIH iCite citation data (12GB metadata + 4GB citation links) for landmark paper filtering and KOL identification.
+**Decision**: Import both iCite metadata and citation links into Postgres. Defer Neo4j/graph database to Phase 2.
+**Architecture**:
+```sql
+-- Phase 1: Postgres tables
+icite_metadata (12GB) - citation metrics, percentiles, paper metadata
+citation_links (12-18GB with indexes) - citation network edges
+```
+**Why Postgres**:
+- Already running, no new infrastructure
+- SQL queries handle Phase 1 KOL use cases (most cited authors, co-citations)
+- Citation links enable future graph analysis without requiring Neo4j now
+- 200GB disk space available, ~30GB total for iCite data is acceptable
+**Why Not Neo4j in Phase 1**:
+- Phase 1 queries don't need graph traversal (simple aggregations work in SQL)
+- Graph RAG requires entity extraction and relationship modeling (5-7 weeks effort)
+- Can migrate citation data to Neo4j in Phase 2 if needed for advanced features
+**Phase 1 Capabilities**: Filter papers by citation percentile, identify most-cited authors, co-citation analysis (2-hop SQL queries)
+**Phase 2 Evaluation Criteria**: Consider Neo4j if building citation network visualizations, multi-hop traversals (3+ hops), or Graph RAG with knowledge graphs
+**Tradeoff**: Deep graph queries (PageRank, community detection) will be slower in Postgres, but Phase 1 doesn't need them.
+
+## 2025-10-26: Normalized citation data (JOIN) vs denormalized (duplicate columns)
+**Problem**: Should we store citation metrics in `pubmed_papers` table or always JOIN with `icite_metadata`?
+**Decision**: Use normalized approach - JOIN with `icite_metadata` for filtering, do NOT maintain duplicate citation columns in `pubmed_papers`.
+**Why**:
+- Citation filtering is one-time operation per collection (historical papers: `wont_fetch` → `pending`)
+- JOIN performance is acceptable (~6 seconds for 2.6M papers with proper indexes)
+- Avoids data duplication and sync maintenance burden
+- Single source of truth (icite_metadata table)
+**Implementation**:
+- `pubmed_papers.pmid` populated via Stage 1.1 (NCBI ID conversion API)
+- `filter_by_metrics()` uses JOIN: `pubmed_papers.pmid = icite_metadata.pmid`
+- Citation metric columns in `pubmed_papers` (nih_percentile, citation_count, etc.) are DEPRECATED and NOT maintained
+**Tradeoff**: 6-second query time vs sub-second with denormalized data, but acceptable for rare filtering operations.
+**Note**: Existing citation columns kept for backward compatibility but marked DEPRECATED in code/docs.

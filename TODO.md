@@ -1,13 +1,23 @@
 # OpenPharma TODO List
 
-Last updated: 2025-10-24
+Last updated: 2025-10-28
 
-## Current Sprint: User Feedback & Evaluation
+## Current Sprint: Historical Paper Ingestion & Reranking Evaluation
 
-### Active Tasks
+### Active Tasks - Historical Paper Ingestion
+- [ ] Run stage_2_fetch_papers.py for 58,705 historical papers (fetch_status="pending")
+  - Note: Large job, must run during off-peak hours (weekends or 9pm-5am ET weekdays)
+  - Estimated time: ~10 hours at 100 papers/minute
+- [ ] Run stage_3_chunk_papers.py for historical papers
+- [ ] Run stage_4_embed_chunks.py for historical papers
+- [ ] Verify ingestion complete (52K diabetes + 58K historical = 110K total papers)
+
+### Active Tasks - Reranking Evaluation
+- [ ] Complete eval run (increase timeout or run on faster machine)
+- [ ] Evaluate results with Gemini using LLM-as-judge prompt
+- [ ] Document decision in docs/03_decisions.md (deploy reranking or not)
 - [ ] Share with 5-10 friends for feedback
-- [ ] Set up RAGAS evaluation framework
-- [ ] Optimize response time to < 30 seconds (deferred to Phase 2 with Gemini)
+- [ ] Set up RAGAS evaluation framework (future)
 
 **CRITICAL: Ollama Version Requirement**
 - **MUST use Ollama 0.11.x** (tested on 0.11.11)
@@ -33,7 +43,6 @@ Last updated: 2025-10-24
   - Gemini Flash/Pro via Vertex AI
   - Self-hosted DB via Cloudflare Tunnel (saves $30-50/month)
 - [ ] Implement query rewriting for better multi-turn retrieval
-- [ ] Add chunk reranking (cross-encoder or LLM-based)
 - [ ] Add routing/classification for query types
 - [ ] Implement query rewriting for better multi-turn retrieval (alternative to hybrid retrieval)
 - [ ] Re-evaluate hybrid retrieval with more capable model (GPT-4 or Llama 3.1 70B)
@@ -61,12 +70,21 @@ Last updated: 2025-10-24
 
 ## Project Context
 
-### Dataset Status (52K Papers - COMPLETE)
+### Dataset Status
+**Collection 1: Diabetes Research (2020-2025) - COMPLETE**
 - PMC IDs collected: 52,014
 - Papers fetched: 52,014 (100%)
 - Documents chunked: 52,014 (100% → 1.89M chunks, 717M tokens)
 - Chunks embedded: 52,014 (100% → 1.89M chunks with 768d vectors)
-- **Ingestion pipeline complete** - ready for RAG implementation
+
+**Collection 2: Historical Papers (1990-2019, Top 95th Percentile) - IN PROGRESS**
+- PMC IDs collected: 2,631,245 historical papers (marked fetch_status="wont_fetch")
+- Filtered by citations: 58,705 papers (top 95th percentile, marked fetch_status="pending")
+- Papers fetched: 0 / 58,705 (0%)
+- Documents chunked: 0 / 58,705 (0%)
+- Chunks embedded: 0 / 58,705 (0%)
+
+**Total Dataset Target**: 110,719 papers (52K diabetes + 58K historical)
 
 ### Tech Stack
 - Database: Postgres + pgvector, HNSW index (m=16, ef_construction=64)
@@ -84,6 +102,7 @@ Last updated: 2025-10-24
 ## Completed Milestones
 
 See archived TODO files for detailed completion history:
+- `archive/TODO_completed_20251028.md` - iCite Integration, Reranking, Evaluation Framework
 - `archive/TODO_completed_20251024.md` - Phase 1 Demo Deployment (RAG, UI, Mobile, Production)
 - `archive/TODO_completed_20251014.md` - Ingestion Pipeline & Ollama Migration
 

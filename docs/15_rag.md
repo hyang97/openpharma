@@ -20,17 +20,23 @@ app/
     └── generation.py           # LLM synthesis with citations
 ```
 
-## 1. Retrieval (`app/retrieval/semantic_search.py`)
+## 1. Retrieval
 
-### Function: `semantic_search(query: str, top_k: int = 10) -> List[SearchResult]`
+### 1.1 Semantic Search (`app/retrieval/semantic_search.py`)
 
-Performs vector similarity search over 1.89M embedded chunks.
+#### Function: `semantic_search(query: str, top_k: int = 20, top_n: int = 5, use_reranker: bool = False) -> List[SearchResult]`
+
+Performs vector similarity search over 1.89M embedded chunks with optional cross-encoder reranking.
 
 **Implementation:**
 1. Embed query using cached EmbeddingService (Ollama nomic-embed-text, 768d)
-2. Execute cosine similarity search via Postgres HNSW index
+2. Execute cosine similarity search via Postgres HNSW index to get top_k candidates
 3. Join with documents table to get metadata
-4. Return top-K chunks ordered by similarity (highest first)
+4. **Optional reranking** (if use_reranker=True):
+   - Pass top_k chunks to cross-encoder reranker
+   - Cross-encoder scores (query, chunk) pairs for relevance
+   - Returns top_n highest-scored chunks
+5. Return top_n chunks (reranked if enabled, otherwise first top_n from semantic search)
 
 **SearchResult fields:**
 - `chunk_id`, `document_id`, `section`, `content`
@@ -78,6 +84,32 @@ Combines fresh semantic search with historical chunks from conversation.
 **Performance:**
 - Turn 1: ~50-300ms (semantic search only)
 - Turn 2+: ~200-600ms (semantic search + chunk ID lookup)
+
+### 1.2 Cross-Encoder Reranking (`app/retrieval/reranker.py`)
+
+Reranks retrieved chunks using a cross-encoder model for improved relevance.
+
+**Why Reranking?**
+- Bi-encoder embeddings (nomic-embed-text) optimize for retrieval speed but sacrifice accuracy
+- Cross-encoders score (query, document) pairs jointly for better relevance
+- Two-stage pipeline: fast retrieval (top-20) → slow reranking (top-5)
+
+**Model:** `cross-encoder/ms-marco-MiniLM-L-6-v2` (default)
+- Fast and lightweight cross-encoder
+- Reranking time: ~0.8s for 20 chunks
+- Alternative models available via RERANKER_MODEL env var:
+  - `BAAI/bge-reranker-v2-m3`: Higher quality, ~48s for 20 chunks
+  - `BAAI/bge-small-en-v1.5`: Balanced, ~1s for 20 chunks
+
+**Configuration:**
+- Set in `.env`: `RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2`
+- Must be passed through `docker-compose.yml` environment section
+- Default in code: `app/retrieval/reranker.py` line 40
+- Requires container restart to pick up env var changes
+
+**Usage:** Pass `use_reranker=True` to `/chat` endpoint or `semantic_search()` function
+
+**Evaluation:** Automated framework in `tests/reranking_eval_*.py` with LLM-as-judge
 
 ## 2. Generation (`app/rag/generation.py`)
 

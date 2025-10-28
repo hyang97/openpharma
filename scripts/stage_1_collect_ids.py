@@ -27,17 +27,20 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Check how many papers match a query (without collecting)
+  python -m scripts.stage_1_collect_ids --counts-only --query "obesity[MeSH] AND open access[filter]"
+
   # Collect 50 diabetes papers
-  python -m scripts.collect_pmc_ids --limit 50
+  python -m scripts.stage_1_collect_ids --limit 50
 
   # Collect all oncology papers from 2023-2024
-  python -m scripts.collect_pmc_ids --keyword cancer --start-date 2023-01-01 --end-date 2024-12-31
+  python -m scripts.stage_1_collect_ids --keyword cancer --start-date 2023-01-01 --end-date 2024-12-31
 
   # Find papers updated in February 2025
-  python -m scripts.collect_pmc_ids --start-date 2025-02-01 --end-date 2025-02-28 --date-field lr
+  python -m scripts.stage_1_collect_ids --start-date 2025-02-01 --end-date 2025-02-28 --date-field lr
 
   # Use custom query for specific publication types (e.g., meta-analyses, reviews)
-  python -m scripts.collect_pmc_ids --query "diabetes[MeSH] AND meta-analysis[ptyp] AND open access[filter]"
+  python -m scripts.stage_1_collect_ids --query "diabetes[MeSH] AND meta-analysis[ptyp] AND open access[filter]"
 
 Note: Default search filters to open access articles only (full-text available).
 For custom queries, always include 'open access[filter]' to ensure full-text availability.
@@ -58,6 +61,10 @@ For custom queries, always include 'open access[filter]' to ensure full-text ava
                        help="Date field to search: pdat=publication date, lr=last revision, crdt=created (default: pdat)")
     parser.add_argument("--reset-fetched", action="store_true",
                        help="Reset already-fetched papers to pending (default: skip already-fetched papers)")
+    parser.add_argument("--fetch-status", type=str, default="wont_fetch", choices=["pending", "wont_fetch"],
+                       help="Initial fetch status for collected papers (default: wont_fetch)")
+    parser.add_argument("--counts-only", action="store_true",
+                       help="Only report result count, don't collect or store PMC IDs")
 
     args = parser.parse_args()
 
@@ -93,66 +100,80 @@ For custom queries, always include 'open access[filter]' to ensure full-text ava
 
     with open(history_file, "a") as f:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        f.write(f"{timestamp} | Query: {query} | Limit: {limit or 'all'}\n")
+        mode = "counts-only" if args.counts_only else f"limit: {args.limit or 'all'}"
+        f.write(f"{timestamp} | Query: {query} | Mode: {mode}\n")
 
     # Search PubMed with pagination
     limit = args.limit
     fetcher = PubMedFetcher()
+
+    # If counts-only mode, just get the count and exit
+    if args.counts_only:
+        result = fetcher.search_papers(query=query, counts_only=True)
+        total_count = int(result[0])
+        logger.info(f"\nTotal matching papers: {total_count:,}\n")
+
+        with open(history_file, "a") as f:
+            f.write(f"         → Result: {total_count:,} total papers\n\n")
+
+        return
+
     api_max = 10000  # NCBI's per-request limit
 
-    all_pmc_ids = []
+    total_collected = 0
     result_start_idx = 0
-
     batch_num = 1
-    while True:
-        # How many to request this batch?
-        num_to_request = api_max
 
-        if limit is not None:
-            num_remaining = limit - len(all_pmc_ids)
-            if num_remaining <= 0:
-                break
-            elif num_remaining < num_to_request:
-                num_to_request = num_remaining
-
-        # Fetch batch
-        logger.info(f"Fetching batch {batch_num} (requesting {num_to_request} PMC IDs, start index: {result_start_idx})")
-        batch = fetcher.search_papers(query=query, max_results=num_to_request, start_index=result_start_idx)
-        all_pmc_ids.extend(batch)
-        result_start_idx += len(batch)
-        logger.info(f"Batch {batch_num} complete: got {len(batch)} PMC IDs (total so far: {len(all_pmc_ids)})\n")
-
-        # Stop if we got fewer than requested (end of results)
-        if len(batch) < num_to_request:
-            logger.info(f"Reached end of results (got {len(batch)} < {num_to_request} requested)\n")
-            break
-
-        batch_num += 1
-
-    # Insert into database
     with Session(engine) as session:
-        for pmc_id in all_pmc_ids:
-            stmt = insert(PubMedPaper).values(pmc_id=pmc_id, fetch_status='pending')
+        while True:
+            # How many to request this batch?
+            num_to_request = api_max
 
-            if args.reset_fetched:
-                # Reset all papers to pending (even if already fetched)
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=['pmc_id'],
-                    set_={'fetch_status': 'pending'}
-                )
-            else:
-                # Skip papers that already exist (do nothing on conflict)
-                stmt = stmt.on_conflict_do_nothing(index_elements=['pmc_id'])
+            if limit is not None:
+                num_remaining = limit - total_collected
+                if num_remaining <= 0:
+                    break
+                elif num_remaining < num_to_request:
+                    num_to_request = num_remaining
 
-            session.execute(stmt)
+            # Fetch batch from NCBI
+            logger.info(f"Fetching batch {batch_num} (requesting {num_to_request} PMC IDs, start index: {result_start_idx})")
+            batch_pmc_ids = fetcher.search_papers(query=query, max_results=num_to_request, start_index=result_start_idx)
+            result_start_idx += len(batch_pmc_ids)
+            logger.info(f"Batch {batch_num} complete: got {len(batch_pmc_ids)} PMC IDs")
 
-        session.commit()
+            # Insert batch into database (bulk insert)
+            if batch_pmc_ids:
+                values = [{"pmc_id": pmc_id, "fetch_status": args.fetch_status} for pmc_id in batch_pmc_ids]
 
-    logger.info(f"Collected {len(all_pmc_ids)} PMC IDs")
+                if args.reset_fetched:
+                    # Reset all papers to specified fetch status (even if already fetched)
+                    stmt = insert(PubMedPaper).values(values).on_conflict_do_update(
+                        index_elements=['pmc_id'],
+                        set_={'fetch_status': args.fetch_status}
+                    )
+                else:
+                    # Skip papers that already exist (do nothing on conflict)
+                    stmt = insert(PubMedPaper).values(values).on_conflict_do_nothing(index_elements=['pmc_id'])
+
+                session.execute(stmt)
+                session.commit()
+
+                total_collected += len(batch_pmc_ids)
+                logger.info(f"  → Inserted {len(batch_pmc_ids)} PMC IDs into database (total: {total_collected})\n")
+
+            # Stop if we got fewer than requested (end of results)
+            if len(batch_pmc_ids) < num_to_request:
+                logger.info(f"Reached end of results (got {len(batch_pmc_ids)} < {num_to_request} requested)\n")
+                break
+
+            batch_num += 1
+
+    logger.info(f"Collected {total_collected} PMC IDs")
 
     # Append result to search history
     with open(history_file, "a") as f:
-        f.write(f"         → Result: {len(all_pmc_ids)} PMC IDs collected\n\n")
+        f.write(f"         → Result: {total_collected} PMC IDs collected\n\n")
 
 
 if __name__ == "__main__":

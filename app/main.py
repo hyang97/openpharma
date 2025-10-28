@@ -39,6 +39,7 @@ class UserRequest(BaseModel):
     user_message: str
     use_local: Optional[bool] = None
     conversation_id: Optional[str] = None
+    use_reranker: bool = False
 
 class ConversationSummaryResponse(BaseModel):
     conversation_id: str 
@@ -239,7 +240,13 @@ async def send_message(request: UserRequest):
 
     try:
         # Use RAG pipeline - returns RAGResponse with [PMC...] format
-        result = generate_response(user_message=request.user_message, conversation_id=conversation_id, use_local=use_local, conversation_history=conversation_history)
+        result = generate_response(
+            user_message=request.user_message, 
+            conversation_id=conversation_id, 
+            use_local=use_local, 
+            use_reranker=request.use_reranker,
+            conversation_history=conversation_history
+            )
 
         # Extract and store citations from response (assigns conversation-wide numbers)
         numbered_response_citations = extract_and_store_citations(result, conversation_id)
