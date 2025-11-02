@@ -23,7 +23,15 @@ services:
       - RERANKER_MODEL=${RERANKER_MODEL}
       - LOG_LEVEL=DEBUG
     volumes:
-      - .:/app
+      # Mount only backend code (exclude ui/, venv/, node_modules/)
+      - ./app:/app/app
+      - ./scripts:/app/scripts
+      - ./tests:/app/tests
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./backups:/app/backups
+      - ./archive:/app/archive
+      - ./.env:/app/.env
     depends_on:
       - postgres
     extra_hosts:

@@ -14,5 +14,5 @@ export type ConversationSummary = {
   conversation_id: string
   first_message: string
   message_count: number
-  last_updated: string
+  last_updated: number
 }

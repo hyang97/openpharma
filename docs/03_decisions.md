@@ -118,3 +118,23 @@ citation_links (12-18GB with indexes) - citation network edges
 - Citation metric columns in `pubmed_papers` (nih_percentile, citation_count, etc.) are DEPRECATED and NOT maintained
 **Tradeoff**: 6-second query time vs sub-second with denormalized data, but acceptable for rare filtering operations.
 **Note**: Existing citation columns kept for backward compatibility but marked DEPRECATED in code/docs.
+
+## 2025-10-27: Deploy cross-encoder reranking in production
+**Problem**: Bi-encoder semantic search (nomic-embed-text) retrieves broadly relevant chunks but lacks precision for nuanced queries.
+**Decision**: Enable cross-encoder reranking by default using `cross-encoder/ms-marco-MiniLM-L-6-v2`.
+**Why**:
+- Improves retrieval quality by re-scoring top-20 candidates with cross-encoder
+- Two-stage pipeline: fast bi-encoder retrieval → precise cross-encoder reranking
+- ms-marco-MiniLM-L-6-v2 adds only ~0.8s latency (acceptable given 18-40s total response time)
+- Evaluation framework validates quality improvements
+**Architecture**:
+- Retrieval: `semantic_search(query, top_k=20, top_n=5, use_reranker=True)`
+- Reranker service: `app/retrieval/reranker.py` (cached model at module level)
+- Default model: ms-marco-MiniLM-L-6-v2 (configurable via RERANKER_MODEL env var)
+**Implementation**:
+- Frontend: Pass `use_reranker: true` in /chat API calls
+- Backend: `generation.py` calls `semantic_search()` with use_reranker flag
+- Model loaded once at module level, reused across requests
+**Tradeoff**: +0.8s latency per query, but significantly better chunk relevance and answer quality.
+**Alternative models considered**: bge-reranker-v2-m3 (higher quality, 48s latency), bge-small-en-v1.5 (balanced, 1s latency).
+**Future**: May revisit model choice after RAGAS evaluation shows quality improvements justify latency cost.

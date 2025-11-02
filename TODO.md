@@ -12,10 +12,10 @@ Last updated: 2025-10-28
 - [ ] Run stage_4_embed_chunks.py for historical papers
 - [ ] Verify ingestion complete (52K diabetes + 58K historical = 110K total papers)
 
-### Active Tasks - Reranking Evaluation
-- [ ] Complete eval run (increase timeout or run on faster machine)
-- [ ] Evaluate results with Gemini using LLM-as-judge prompt
-- [ ] Document decision in docs/03_decisions.md (deploy reranking or not)
+### Active Tasks - Reranking Deployment
+- [x] Complete reranking evaluation (2025-10-27)
+- [x] Document decision in docs/03_decisions.md (2025-10-27)
+- [x] Enable reranker by default in production (set use_reranker=True) (2025-10-27)
 - [ ] Share with 5-10 friends for feedback
 - [ ] Set up RAGAS evaluation framework (future)
 

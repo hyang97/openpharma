@@ -39,8 +39,10 @@ The project follows a phased development approach across three phases:
 ### React UI (Complete)
 - Next.js 15 + TypeScript + Tailwind CSS with dark theme
 - Mobile-responsive with collapsible sidebar
+- Multi-turn conversation support with client-side caching
+- Race condition prevention with useRef validation pattern
 - Deployed: Frontend on Vercel, backend via Cloudflare Tunnel
-- See `docs/20_ui_design.md` for complete design
+- See `docs/20_ui_architecture.md`, `docs/21_ui_design_system.md`, `docs/22_conversation_management.md`, `docs/23_rag_ui_integration.md` for complete documentation
 
 ### Data Processing
 - **Chunking**: 512 tokens with 50-token overlap, section-aware (abstract, methods, results separately)
@@ -188,7 +190,7 @@ scripts/
 ├── stage_3_chunk_papers.py    # Stage 3: Chunk documents
 └── stage_4_embed_chunks.py    # Stage 4: Embed chunks
 
-docs/                                   # Documentation organized by prefix: 00-04 (requirements), 11-15 (backend), 20+ (frontend)
+docs/                                   # Documentation organized by prefix: 00-04 (requirements), 11-15 (backend), 20+ (frontend), 30+ (config/deployment)
 ├── 00_cheatsheet.md                    # Common commands reference
 ├── 01_project_spec.md                  # Project specification and requirements
 ├── 02_use_cases.md                     # User stories and use cases
@@ -199,7 +201,12 @@ docs/                                   # Documentation organized by prefix: 00-
 ├── 13_ingestion_pipeline.md            # 4-stage decoupled pipeline architecture
 ├── 14_embedding_service.md             # EmbeddingService API reference
 ├── 15_rag.md                           # RAG pipeline architecture and implementation
-└── 20_ui_design.md                     # UI design documentation
+├── 20_ui_architecture.md               # Frontend architecture and state management
+├── 21_ui_design_system.md              # UI design system (colors, typography, components)
+├── 22_conversation_management.md       # Conversation lifecycle and switching patterns
+├── 23_rag_ui_integration.md            # RAG-specific UI patterns and citation display
+├── 30_configuration.md                 # Configuration settings and Docker setup
+└── 31_deployment.md                    # Deployment architectures and guide
 
 tests/
 ├── test_refactored_flow.py                 # End-to-end RAG flow tests
