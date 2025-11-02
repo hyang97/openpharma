@@ -26,11 +26,16 @@ class ConversationManager:
         self.conversations: Dict[str, Conversation] = {}
         self.max_age_seconds = max_age_seconds
 
-    def create_conversation(self) -> str:
-        """Create a new conversation and return its UUID."""
+    def create_conversation(self, conversation_id: Optional[str] = None) -> str:
+        """Create a new conversation and return its UUID. Optionally except client-provided ID"""
         self._run_cleanup_if_needed()
 
-        c_id = str(uuid.uuid4())
+        c_id = conversation_id or str(uuid.uuid4())
+
+        # Check if already exists
+        if c_id in self.conversations:
+            raise ValueError(f"Conversation {c_id} already exists")
+
         c = Conversation(conversation_id=c_id)
         self.conversations[c_id] = c
         return c_id
@@ -75,6 +80,24 @@ class ConversationManager:
         c.messages.append(message)
         c.last_accessed = time.time()
         self._run_cleanup_if_needed()
+
+    def delete_last_message(self, conversation_id: str) -> Dict:
+        """Delete the last message for rollback"""
+        if conversation_id not in self.conversations:
+            raise ValueError(f"Conversation {conversation_id} not found")
+
+        c = self.conversations.get(conversation_id)
+
+        if not c.messages:
+            raise ValueError(f"Conversation {conversation_id} has no messages")
+        
+        c.last_accessed = time.time()
+        return c.messages.pop()
+        
+            
+                
+        
+
 
     def get_or_create_citation(self, conversation_id: str, chunk: SearchResult) -> Citation:
         """

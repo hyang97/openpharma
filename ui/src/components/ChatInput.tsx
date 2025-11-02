@@ -3,9 +3,10 @@ type ChatInputProps = {
   onChange: (value: string) => void
   onSend: () => void
   centered?: boolean
+  disabled?: boolean
 }
 
-export function ChatInput({ value, onChange, onSend, centered = false }: ChatInputProps) {
+export function ChatInput({ value, onChange, onSend, centered = false, disabled = false }: ChatInputProps) {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -23,7 +24,8 @@ export function ChatInput({ value, onChange, onSend, centered = false }: ChatInp
           onKeyPress={handleKeyPress}
           placeholder="Ask a research question..."
           rows={1}
-          className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 sm:px-5 sm:py-4 pr-12 sm:pr-14 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base resize-none overflow-hidden"
+          disabled={disabled}
+          className={`w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 sm:px-5 sm:py-4 pr-12 sm:pr-14 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base resize-none overflow-hidden ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
           style={{
             minHeight: '52px',
             maxHeight: '200px',
@@ -38,7 +40,7 @@ export function ChatInput({ value, onChange, onSend, centered = false }: ChatInp
         <button
           onClick={onSend}
           className="absolute right-2 bottom-3 sm:bottom-4 bg-blue-500 text-white w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center hover:bg-blue-600 transition-colors disabled:bg-slate-700 disabled:cursor-not-allowed"
-          disabled={!value.trim()}
+          disabled={!value.trim() || disabled}
           aria-label="Send message"
         >
           <span className="text-xl">›</span>

@@ -230,13 +230,17 @@ async def send_message(request: UserRequest):
     # Get or create conversation object
     conversation_id = request.conversation_id
     if not conversation_id:
+        # No ID provided
         conversation_id = conversation_manager.create_conversation()
-    conversation = conversation_manager.get_conversation(conversation_id)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
+    elif not conversation_manager.get_conversation(conversation_id):
+        # ID provided, need to create new conversation
+        _ = conversation_manager.create_conversation(conversation_id)
+    
     # Get conversation history for multi-turn support
     conversation_history = conversation_manager.get_messages(conversation_id)
+
+    # Save user message immediately, optimistic
+    conversation_manager.add_message(conversation_id, "user", request.user_message)
 
     try:
         # Use RAG pipeline - returns RAGResponse with [PMC...] format
@@ -252,7 +256,6 @@ async def send_message(request: UserRequest):
         numbered_response_citations = extract_and_store_citations(result, conversation_id)
 
         # Store messages with ORIGINAL [PMC...] format for LLM context
-        conversation_manager.add_message(conversation_id, "user", request.user_message)
         conversation_manager.add_message(
             conversation_id,
             "assistant",
@@ -284,7 +287,10 @@ async def send_message(request: UserRequest):
         )
 
     except Exception as e:
+        # Rollback: delete the user message 
+        deleted_message = conversation_manager.delete_last_message(conversation_id)
         logger.error(f"Error generating response: {str(e)}", exc_info=True)
+        logger.error(f"Removing latest message: {str(deleted_message)}")
         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
 
 @app.get("/")
