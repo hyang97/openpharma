@@ -9,14 +9,15 @@ TABLE: pubmed_papers - Tracks discovered PMC IDs and fetch status
 pmc_id            VARCHAR       PRIMARY KEY        "1234567" (numeric only)
 pmid              BIGINT                           PubMed ID (NULL=not fetched, -1=no PMID found)
 doi               TEXT                             DOI (from NCBI API)
-nih_percentile    FLOAT                            NIH percentile (NULL=not queried, -1=no data, >=0=actual)
-publication_year  INTEGER                          Publication year (NULL=not queried, -1=no data, >0=actual)
-citation_count    INTEGER                          Total citations (NULL=not queried, -1=no data, >=0=actual)
-relative_citation_ratio FLOAT                      RCR: field-adjusted citation metric (NULL=not queried, -1=no data, >=0=actual)
-is_clinical       BOOLEAN                          Clinical article (NULL=not queried or no data, True/False=actual)
-is_research_article BOOLEAN                        Research article (NULL=not queried or no data, True/False=actual)
+nih_percentile    FLOAT                            NIH percentile (NULL=not queried, -1=no data, >=0=actual) [DEPRECATED]
+publication_year  INTEGER                          Publication year (NULL=not queried, -1=no data, >0=actual) [DEPRECATED]
+citation_count    INTEGER                          Total citations (NULL=not queried, -1=no data, >=0=actual) [DEPRECATED]
+relative_citation_ratio FLOAT                      RCR: field-adjusted citation metric (NULL=not queried, -1=no data, >=0=actual) [DEPRECATED]
+is_clinical       BOOLEAN                          Clinical article (NULL=not queried or no data, True/False=actual) [DEPRECATED]
+is_research_article BOOLEAN                        Research article (NULL=not queried or no data, True/False=actual) [DEPRECATED]
 discovered_at     TIMESTAMP     DEFAULT NOW()
 fetch_status      VARCHAR       DEFAULT 'pending'  'pending' | 'wont_fetch' | 'fetched' | 'failed'
+priority          INTEGER       DEFAULT 50         Priority level (0=exclude, 10=low, 50=normal, 100=high)
 
 SENTINEL VALUES (numeric/float only): -1 = "queried but no data available", NULL = "not yet queried"
 BOOLEAN FIELDS: NULL = "not queried or no data", True/False = "actual value"
@@ -27,6 +28,7 @@ INDEX: idx_pubmed_papers_percentile ON nih_percentile
 INDEX: idx_pubmed_papers_year ON publication_year
 INDEX: idx_pubmed_papers_citation_count ON citation_count
 INDEX: idx_pubmed_papers_rcr ON relative_citation_ratio
+INDEX: idx_pubmed_papers_priority ON priority
 
 
 TABLE: documents - Research papers and regulatory documents
@@ -38,6 +40,7 @@ title             TEXT          NOT NULL
 abstract          TEXT
 full_text         TEXT                             Concatenated sections with headers
 doc_metadata      JSONB                            Authors, journal, section_offsets, etc.
+priority          INTEGER       DEFAULT 50         Priority level (0=exclude, 10=low, 50=normal, 100=high)
 ingestion_status  VARCHAR       DEFAULT 'fetched'  'fetched' | 'chunked' | 'batch_submitted' | 'embedded'
 openai_batch_id   VARCHAR                          Reference to batch job (nullable)
 created_at        TIMESTAMP     DEFAULT NOW()
@@ -46,6 +49,7 @@ updated_at        TIMESTAMP
 UNIQUE: (source, source_id)
 INDEX:  idx_documents_ingestion_status ON ingestion_status
 INDEX:  idx_documents_openai_batch_id ON openai_batch_id
+INDEX:  idx_documents_priority ON priority
 
 
 TABLE: document_chunks - Chunked content with vector embeddings
@@ -58,7 +62,8 @@ content            TEXT          NOT NULL           Raw chunk text
 char_start         INTEGER       NOT NULL           Character offset in full_text
 char_end           INTEGER       NOT NULL           Character offset in full_text
 token_count        INTEGER       NOT NULL           ~512 tokens per chunk
-embedding          VECTOR(1536)                     NULL until embedded
+embedding          VECTOR(768)                      Ollama nomic-embed-text (NULL until embedded)
+openai_embedding   VECTOR(1536)                     Legacy OpenAI embeddings (backup)
 created_at         TIMESTAMP     DEFAULT NOW()
 
 INDEX: idx_chunks_document ON document_id
@@ -125,6 +130,7 @@ class PubMedPaper(Base):
     # Tracking fields
     discovered_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     fetch_status = Column(String, default='pending', nullable=False)  # 'pending', 'wont_fetch', 'fetched', 'failed'
+    priority = Column(Integer, default=50, nullable=False)  # 0=exclude, 10=low, 50=normal, 100=high
 
     # Indexes
     __table_args__ = (
@@ -134,6 +140,7 @@ class PubMedPaper(Base):
         Index('idx_pubmed_papers_year', 'publication_year'),
         Index('idx_pubmed_papers_citation_count', 'citation_count'),
         Index('idx_pubmed_papers_rcr', 'relative_citation_ratio'),
+        Index('idx_pubmed_papers_priority', 'priority'),
     )
 
     def __repr__(self):
@@ -164,6 +171,9 @@ class Document(Base):
     # IMPORTANT: section_offsets must be stored here (see design notes above)
     doc_metadata = Column(JSONB)
 
+    # Priority level for filtering in semantic search
+    priority = Column(Integer, default=50, nullable=False)  # 0=exclude, 10=low, 50=normal, 100=high
+
     # Ingestion pipeline status tracking
     # Used by Stage 3 (chunking) and Stage 4 (embedding)
     ingestion_status = Column(String, default='fetched', nullable=False)  # 'fetched', 'chunked', 'batch_submitted', 'embedded'
@@ -179,6 +189,7 @@ class Document(Base):
     __table_args__ = (
         UniqueConstraint('source', 'source_id', name='uq_source_sourceid'),
         Index('idx_documents_ingestion_status', 'ingestion_status'),
+        Index('idx_documents_priority', 'priority'),
     )
 
     def __repr__(self):

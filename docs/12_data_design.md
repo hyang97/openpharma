@@ -192,6 +192,7 @@ CREATE TABLE documents (
   abstract TEXT,
   full_text TEXT,                                -- Concatenated sections (see Section Storage)
   doc_metadata JSONB,                            -- Authors, journal, section_offsets, etc.
+  priority INTEGER DEFAULT 50,                   -- 0=exclude, 10=low, 50=normal, 100=high
   ingestion_status VARCHAR DEFAULT 'fetched',    -- 'fetched', 'chunked', 'embedded'
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP,
@@ -199,6 +200,7 @@ CREATE TABLE documents (
 );
 
 CREATE INDEX idx_documents_ingestion_status ON documents(ingestion_status);
+CREATE INDEX idx_documents_priority ON documents(priority);
 ```
 
 | Column | Type | Description |
@@ -210,6 +212,7 @@ CREATE INDEX idx_documents_ingestion_status ON documents(ingestion_status);
 | `abstract` | TEXT | Abstract text (nullable) |
 | `full_text` | TEXT | Concatenated sections with headers |
 | `doc_metadata` | JSONB | Flexible metadata (authors, journal, section_offsets, etc.) |
+| `priority` | INTEGER | Priority level: 0=exclude, 10=low, 50=normal, 100=high (default: 50) |
 | `ingestion_status` | VARCHAR | 'fetched', 'chunked', or 'embedded' |
 | `created_at` | TIMESTAMP | When row was first inserted |
 | `updated_at` | TIMESTAMP | When content was last replaced (NULL = never updated) |
@@ -218,11 +221,13 @@ CREATE INDEX idx_documents_ingestion_status ON documents(ingestion_status);
 - Primary key on `document_id`
 - Unique constraint on `(source, source_id)`
 - B-tree index on `ingestion_status` (for `WHERE ingestion_status='fetched'` queries)
+- B-tree index on `priority` (for filtering in semantic search)
 
 **Design Notes:**
 - `full_text` contains ALL sections concatenated (see Section Storage Strategy below)
 - `doc_metadata['section_offsets']` stores character positions for section recovery
 - `ingestion_status` tracks progress through Phase 2 → 3 → 4
+- `priority` is used to filter documents in semantic search (chunks inherit priority via JOIN)
 - UPSERT on `(source, source_id)` replaces old documents during updates
 
 ---
@@ -277,6 +282,7 @@ CREATE INDEX idx_chunks_needs_embedding ON document_chunks(document_chunk_id)
 - Embedding generated from: `f"Document: {title}\nSection: {section}\n\n{content}"`
 - Partial index shrinks as embeddings complete (efficient storage)
 - `document_chunk_id` used for Batch API tracking (cleaner than denormalizing source/source_id)
+- **Priority filtering:** Chunks do NOT store priority - they inherit it from their parent document via JOIN (see semantic_search.py). This avoids expensive UPDATE operations on the large chunks table when priorities change.
 
 ---
 
