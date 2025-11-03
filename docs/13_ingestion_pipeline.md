@@ -24,13 +24,17 @@ class PubMedPaper(Base):
     __tablename__ = "pubmed_papers"
 
     pmc_id = Column(String, primary_key=True)           # "1234567" (numeric only, no PMC prefix)
+    pmid = Column(Integer)                              # PubMed ID for citation data
+    doi = Column(Text)                                  # DOI
     discovered_at = Column(DateTime, default=now)       # When we first found it
-    fetch_status = Column(String, default='pending')    # 'pending', 'fetched', 'failed'
+    fetch_status = Column(String, default='pending')    # 'pending', 'wont_fetch', 'fetched', 'failed'
+    priority = Column(Integer, default=50)              # 0=exclude, 10=low, 50=normal, 100=high
 ```
 
 **Notes:**
 - `pmc_id` stores numeric ID only (e.g., "1234567"), not "PMC1234567"
 - PMC prefix added only for display/logging: `f"PMC{pmc_id}"`
+- `priority` propagates to documents and is used to filter chunks in semantic search
 - No foreign key to Document table (application-level enforcement)
 
 ### Modified Table: Document
@@ -41,7 +45,8 @@ Add ingestion status tracking.
 class Document(Base):
     # ... existing fields (document_id, source, source_id, title, abstract, full_text, doc_metadata) ...
 
-    # NEW FIELD
+    # Ingestion tracking fields
+    priority = Column(Integer, default=50)                # 0=exclude, 10=low, 50=normal, 100=high
     ingestion_status = Column(String, default='fetched')  # 'fetched', 'chunked', 'embedded'
 ```
 
@@ -88,6 +93,96 @@ python scripts/stage_1_collect_ids.py --query "diabetes[Title/Abstract] AND 2025
 
 ### Idempotency
 Re-running same search skips PMC IDs already in table (ON CONFLICT DO NOTHING)
+
+---
+
+## Stage 1.1: Backfill PMIDs (Optional)
+
+### Script
+```bash
+docker-compose exec api python -m scripts.stage_1_1_backfill_pmids [--limit LIMIT] [--batch-size BATCH_SIZE]
+```
+
+### What it does
+1. Finds papers in `pubmed_papers` WHERE `pmid IS NULL`
+2. Converts PMC IDs to PMIDs via NCBI ID Converter API
+3. Updates `pubmed_papers.pmid` column
+4. Handles cases where no PMID exists (sets `pmid = -1`)
+
+### Purpose
+- Required for citation filtering (Stage 1.2)
+- Links PMC papers to iCite citation database
+
+### Output
+- Updated `pubmed_papers.pmid` column
+
+---
+
+## Stage 1.2: Set Fetch Status by Citation Metrics (Optional)
+
+### Script
+```bash
+docker-compose exec api python -m scripts.stage_1_2_set_fetch_status [--min-percentile 95]
+```
+
+### What it does
+1. Queries `pubmed_papers` WHERE `fetch_status='pending'`
+2. Joins with `icite_metadata` on `pmid`
+3. Filters papers by citation metrics (e.g., NIH percentile >= 95)
+4. Sets `fetch_status='wont_fetch'` for low-impact papers
+
+### Purpose
+- Filter out low-impact papers before expensive fetch/embed operations
+- Focus ingestion on landmark/high-citation papers
+
+### Output
+- Updated `pubmed_papers.fetch_status` ('pending' → 'wont_fetch' for filtered papers)
+
+---
+
+## Stage 1.3: Set Priority Levels (Optional)
+
+### Script
+```bash
+docker-compose exec api python -m scripts.stage_1_3_set_priority_level --priority LEVEL [--query QUERY] [--dry-run]
+```
+
+### What it does
+1. Searches PubMed with custom query (e.g., non-research articles like reviews/editorials)
+2. Fetches PMC IDs matching the query
+3. Updates `pubmed_papers.priority` for matched papers
+
+### Examples
+```bash
+# Mark non-research diabetes papers as priority 0 (exclude from search)
+python -m scripts.stage_1_3_set_priority_level --priority 0 --query "(diabetes[MeSH] OR diabetes[Title/Abstract]) AND (Review[ptyp] OR Editorial[ptyp] OR Letter[ptyp])"
+
+# Mark high-impact papers as priority 100
+python -m scripts.stage_1_3_set_priority_level --priority 100 --query "diabetes[Title/Abstract] AND open access[filter]"
+```
+
+### Purpose
+- Exclude non-research content (reviews, editorials) from semantic search
+- Assign priority levels for different paper types
+
+### Output
+- Updated `pubmed_papers.priority` column
+
+### Priority Propagation
+After setting priorities in `pubmed_papers`, propagate to `documents`:
+
+```bash
+# In Beekeeper or psql, run Step 1 from scripts/propagate_priorities.sql:
+UPDATE documents d
+SET priority = p.priority
+FROM pubmed_papers p
+WHERE d.source = 'pmc'
+  AND d.source_id = p.pmc_id;
+```
+
+**Note:** Priority does NOT propagate to `document_chunks`. Chunks inherit priority from parent documents via JOIN in semantic search (see `app/retrieval/semantic_search.py`). This avoids expensive UPDATE operations on the 4.7M chunk table with vector embeddings.
+
+---
 
 ## Stage 2: Fetch Papers
 

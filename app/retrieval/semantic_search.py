@@ -67,6 +67,7 @@ chk.document_chunk_id
 from document_chunks chk
 join documents doc
   on chk.document_id = doc.document_id
+where doc.priority > 0
 order by chk.embedding <=> :query_vector asc
 limit :top_k
 """

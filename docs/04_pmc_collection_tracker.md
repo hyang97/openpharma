@@ -1,6 +1,16 @@
 # PMC Collection Tracker
 
-Last updated: 2025-10-26
+Last updated: 2025-11-02
+
+## Summary
+
+## Total: 2,683,259 papers discovered
+## Fetched: 110,716 papers total (52,014 diabetes + 58,705 historical 95th percentile)
+## Active (RAG): 65,565 papers (priority > 0)
+## Excluded: 45,151 papers (priority = 0, non-research)
+## Baseline 5-year open access: 4,386,906 papers (not loaded)
+## Filtered baseline: 869,593 papers (not loaded)
+
 
 ## Collections
 
@@ -10,50 +20,94 @@ Last updated: 2025-10-26
 - **Papers**: 52,014
 - **Status**: `fetched`
 
-### 2. Historical Papers - 1990
+### 2. Historical Papers (1990-2019) - Baseline Counts
 - **Date**: 2025-10-26
-- **Query**: `open access[filter] AND 1990/01/01:1990/12/31[pdat]`
-- **Papers**: 2,925
-- **Status**: `wont_fetch`
+- **Status**: `not_loaded`
+- **Notes**: Baseline counts to understand available historical papers before citation filtering
 
-### 3. Historical Papers - 1991
+| Year Range | Papers | Query |
+|------------|--------|-------|
+| 1990 | 2,925 | `open access[filter] AND 1990/01/01:1990/12/31[pdat]` |
+| 1991 | 3,053 | `open access[filter] AND 1991/01/01:1991/12/31[pdat]` |
+| 1992 | 3,108 | `open access[filter] AND 1992/01/01:1992/12/31[pdat]` |
+| 1993-2019 | 2,622,159 | `open access[filter] AND 1993/01/01:2019/12/31[pdat]` |
+| **Total** | **2,631,245** | |
+
+### 3. Historical Papers (1990-2019) - 95th Percentile by Citations
 - **Date**: 2025-10-26
-- **Query**: `open access[filter] AND 1991/01/01:1991/12/31[pdat]`
-- **Papers**: 3,053
-- **Status**: `wont_fetch`
+- **Query**: SQL query with iCite citation data to find top 95th percentile by nih_percentile
+- **Papers**: 58,705
+- **Status**: `fetched` (3 failed)
+- **Notes**: Filtered historical papers by citation impact using NIH iCite data. Excludes diabetes research papers already fetched in collection #1. 58,702 successfully fetched and embedded, 3 fetch failures.
 
-### 4. Historical Papers - 1992
-- **Date**: 2025-10-26
-- **Query**: `open access[filter] AND 1992/01/01:1992/12/31[pdat]`
-- **Papers**: 3,108
-- **Status**: `wont_fetch`
+## 4. Exclude Non-Research Articles from Collection #1 (Retroactive)
 
-### 5. Historical Papers - 1993-2019
-- **Date**: 2025-10-26
-- **Query**: `open access[filter] AND 1993/01/01:2019/12/31[pdat]`
-- **Papers**: 2,622,159
-- **Status**: `wont_fetch`
+**Date**: 2025-11-02
+**Tool**: `scripts/stage_1_3_set_priority_level.py`
+**Strategy**: Retroactively mark non-research articles from Collection #1 (Diabetes Research 2020-2025) with priority = 0 to exclude from RAG retrieval
 
-### 6. All Historical Papers (1990-2019) - 95th Percentile by Citations (1990-2019)
-- **Date**: 2025-10-26
-- **Query**: SQL query with iCite citation data to find top 95th percentile by nih_percentage
-- **Papers**: 58,705 
-- **Status**: In progress
-- **Notes**: Filtered historical papers by citation impact using NIH iCite data. Excludes diabetes research papers already fetched in collection #1.
+After fetching Collection #1, we retroactively identified and excluded non-research articles (reviews, editorials, letters, comments, errata) by setting priority = 0. Only papers with priority > 0 are searchable in RAG.
 
-### 7. All Open Access Papers (2020-2025) - Baseline Count
+**Exclusion Query**:
+```
+(diabetes mellitus[MeSH Terms] OR diabetes[Title/Abstract]) AND
+open access[filter] AND
+2020/01/01:2025/12/31[pdat] AND
+(Review[ptyp] OR Editorial[ptyp] OR Letter[ptyp] OR Comment[ptyp] OR Erratum[ptyp])
+```
+
+**Papers Excluded**: 45,151 (reviews, editorials, letters, comments, errata)
+**Papers Retained**: 65,565 research articles (diabetes + historical)
+
+### Priority Distribution (110,716 fetched papers)
+
+| Priority | Count | Description |
+|----------|-------|-------------|
+| 50 | 65,565 | Research articles (searchable in RAG) |
+| 0 | 45,151 | Non-research articles (excluded from RAG) |
+
+**Effective Collection**: 65,565 papers (59% of fetched)
+- ~7K diabetes research articles (2020-2025)
+- ~58K historical high-impact papers (1990-2019, 95th percentile citations)
+
+**Impact**: RAG searches only ~1.5M chunks from research articles (priority > 0), ignoring ~1M chunks from non-research content.
+
+---
+
+
+## Searches (Exploratory, Not Loaded)
+
+### 1. All Open Access Papers (2020-2025) - Baseline Count
 - **Date**: 2025-10-30
 - **Query**: `open access[filter] AND 2020/01/01:2025/12/31[pdat]`
 - **Papers**: 4,386,906
 - **Status**: `not_loaded`
 - **Notes**: Baseline count for 5-year recent paper landscape. This represents the total universe of available papers for potential therapeutic area expansion.
 
-### 8. Filtered Baseline (Article Type Filter)
+### 2. Filtered Baseline (Article Type Filter)
 - **Date**: 2025-10-30
 - **Query**: `open access[filter] AND 2020/01/01:2025/12/31[pdat] NOT (Review[ptyp] OR Editorial[ptyp] OR Letter[ptyp] OR Comment[ptyp] OR Erratum[ptyp])`
 - **Papers**: 869,593
 - **Status**: `not_loaded`
 - **Notes**: 80% reduction from baseline by excluding non-research article types
+
+### 3. Cardiometabolic + Alzheimer's (2020-2025)
+- **Date**: 2025-11-02
+- **Query**:
+```
+(
+  (diabetes mellitus[MeSH Terms] OR diabetes[Title/Abstract]) OR
+  (obesity[MeSH Terms] OR obesity[Title/Abstract]) OR
+  (alzheimer disease[MeSH Terms] OR alzheimer*[Title/Abstract]) OR
+  (non-alcoholic fatty liver disease[MeSH Terms] OR NASH[Title/Abstract] OR NAFLD[Title/Abstract])
+)
+AND open access[filter]
+AND 2020/01/01:2025/12/31[pdat]
+AND NOT (Review[ptyp] OR Editorial[ptyp] OR Letter[ptyp] OR Comment[ptyp] OR Erratum[ptyp])
+```
+- **Papers**: 125,494
+- **Status**: `planned`
+- **Notes**: Combined MeSH + Title/Abstract strategy. Breakdown: Diabetes (67K), Obesity (35K), Alzheimer's (23K), NASH/NAFLD (7K). Estimated ~73K new papers beyond Collection #1.
 
 ## Therapeutic Area Scoping (2025-10-30)
 All queries include article type filter (NOT Review/Editorial/Letter/Comment/Erratum)
@@ -110,8 +164,3 @@ Search strategy: Combined MeSH + Title/Abstract for maximum coverage
 - SGLT2 inhibitors: 435
 - PCSK9 inhibitors: 125
 - Statins: 104
-
-## Total: 2,683,259 papers discovered
-## Fetched or to-be-fetched: 110,719 papers total (52,014 diabetes + 58,705 historical 95th percentile)
-## Baseline 5-year open access: 4,386,906 papers (not loaded)
-## Filtered baseline: 869,593 papers (not loaded)
