@@ -236,7 +236,9 @@ export default function Chat() {
             </button>
 
             <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-4 text-white text-center">OpenPharma</h1>
-            <p className="text-base sm:text-lg text-slate-400 mb-8 sm:mb-12 text-center">Your on-demand pharmaceutical research analyst</p>
+            <p className="text-base sm:text-lg mb-8 sm:mb-12 text-center leading-relaxed">
+              <span className="bg-accent text-white px-2 py-1 rounded" style={{ boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone' }}>Your on-demand pharmaceutical research analyst</span>
+            </p>
             <div className="w-full max-w-3xl">
               <ChatInput value={input} onChange={setInput} onSend={handleSend} centered={true} disabled={isLoading} />
             </div>

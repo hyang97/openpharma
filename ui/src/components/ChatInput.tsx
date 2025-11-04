@@ -25,7 +25,7 @@ export function ChatInput({ value, onChange, onSend, centered = false, disabled 
           placeholder="Ask a research question..."
           rows={1}
           disabled={disabled}
-          className={`w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 sm:px-5 sm:py-4 pr-12 sm:pr-14 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base resize-none overflow-hidden ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 sm:px-5 sm:py-4 pr-12 sm:pr-14 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base resize-none overflow-hidden shadow-[0_0_20px_rgba(0,0,255,0.15)] hover:shadow-[0_0_25px_rgba(0,0,255,0.25)] focus:shadow-[0_0_30px_rgba(0,0,255,0.4)] transition-all ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
           style={{
             minHeight: '52px',
             maxHeight: '200px',
@@ -39,7 +39,7 @@ export function ChatInput({ value, onChange, onSend, centered = false, disabled 
         {/* button component's onClick event -> call parent's onSend prop (which is handleSend) */}
         <button
           onClick={onSend}
-          className="absolute right-2 bottom-3 sm:bottom-4 bg-blue-500 text-white w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center hover:bg-blue-600 transition-colors disabled:bg-slate-700 disabled:cursor-not-allowed"
+          className="absolute right-2 bottom-3 sm:bottom-4 bg-accent text-white w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center hover:bg-accent-hover transition-colors disabled:bg-slate-700 disabled:cursor-not-allowed"
           disabled={!value.trim() || disabled}
           aria-label="Send message"
         >

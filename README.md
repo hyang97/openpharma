@@ -7,10 +7,10 @@
 Ask questions about diabetes research, get AI-synthesized answers with citations from 110K+ research papers.
 
 ### Desktop
-![Desktop conversation view](images/desktop-conversation.png)
+![Desktop conversation view](images/desktop-convo.png)
 
 ### Mobile
-<img src="images/mobile-conversation.png" alt="Mobile conversation view" width="300">
+<img src="images/mobile-convo.png" alt="Mobile conversation view" width="300">
 
 ## What It Does
 
