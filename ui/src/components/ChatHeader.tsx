@@ -27,7 +27,7 @@ export function ChatHeader({ onReturnHome, onToggleSidebar }: ChatHeaderProps) {
 
         <button
           onClick={onReturnHome}
-          className="px-3 py-1.5 md:px-4 md:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs md:text-sm font-semibold transition-colors whitespace-nowrap flex-shrink-0 self-center"
+          className="px-3 py-1.5 md:px-4 md:py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-xs md:text-sm font-semibold transition-colors whitespace-nowrap flex-shrink-0 self-center"
         >
           <span className="hidden sm:inline">+ New Conversation</span>
           <span className="sm:hidden">+ New</span>

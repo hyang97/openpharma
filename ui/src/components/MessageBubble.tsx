@@ -47,7 +47,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               }
             }, 350)
           }}
-          className="text-blue-400 hover:text-blue-300 hover:underline font-semibold cursor-pointer transition-colors"
+          className="text-accent-text hover:opacity-80 hover:underline font-semibold cursor-pointer transition-all"
         >
           [{match[1]}]
         </button>
@@ -67,9 +67,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   return (
     <div className="animate-fade-in">
       {isUser ? (
-        // User message: bubble on the right
+        // User message: bubble on the right with blue outline
         <div className="flex justify-end mb-6">
-          <div className="max-w-3xl rounded-xl px-5 py-4 bg-slate-700 text-white">
+          <div className="max-w-3xl rounded-xl px-5 py-4 bg-accent/15 border-2 border-accent text-white">
             <div className="text-xs font-semibold mb-2 uppercase tracking-wide text-slate-300">
               You
             </div>

@@ -39,7 +39,7 @@ export function ConversationSidebar({
 
       {/* Sidebar */}
       <div
-        className={`bg-slate-800 border-r border-slate-700 flex flex-col transition-all duration-300 ease-in-out
+        className={`bg-gradient-to-b from-slate-800 via-slate-800 to-slate-900 border-r border-slate-700 flex flex-col transition-all duration-300 ease-in-out
           fixed md:static inset-y-0 left-0 z-50
           ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
           ${isExpanded ? 'w-64' : 'w-64 md:w-12'}
@@ -92,10 +92,10 @@ export function ConversationSidebar({
               <button
                 key={conv.conversation_id}
                 onClick={() => onSelectConversation(conv.conversation_id)}
-                className={`w-full text-left p-3 rounded-lg transition-colors ${
+                className={`w-full text-left p-3 rounded-lg transition-all ${
                   currentConversationId === conv.conversation_id
-                    ? 'bg-slate-700 border border-blue-500'
-                    : 'bg-slate-900 border border-slate-700 hover:bg-slate-700'
+                    ? 'bg-slate-900 border-2 border-accent shadow-[0_0_15px_rgba(0,0,255,0.3)]'
+                    : 'bg-slate-900 border border-slate-700 hover:border-accent/50 hover:shadow-[0_0_15px_rgba(0,0,255,0.2)]'
                 }`}
               >
                 <div className="text-sm text-slate-200 truncate mb-1">
