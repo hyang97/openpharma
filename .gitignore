@@ -73,3 +73,12 @@ data/batches/
 # Backups (large SQL dumps)
 backups/
 *.sql
+
+# Project management (private)
+TODO.md
+BACKLOG.md
+CLAUDE.md
+.mcp.json
+
+# Archive folder (private - development history)
+archive/

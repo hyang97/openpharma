@@ -175,21 +175,10 @@ def generate_response(
     )
 
 if __name__ == "__main__":
-    # Configure logging for standalone execution
     from app.logging_config import setup_logging
     setup_logging(
         level=os.getenv("LOG_LEVEL", "INFO"),
         log_file="logs/openpharma.log"
     )
 
-    # Simple test (note: requires conversation_id parameter now)
-    # result = generate_response("What are amylins used for in diabetes treatment?", conversation_id="test-123")
-    # print(f"User message: {result.user_message}\n")
-    # print(f"Generated response:\n{result.generated_response}\n")
-    # print(f"Citations:")
-    # for citation in result.citations:
-    #     print(f"  [{citation.number}] {citation.title} (PMC{citation.source_id})")
-    # print(f"\nGeneration time: {result.generation_time_ms:.0f}ms")
-    # print(f"LLM provider: {result.llm_provider}")
-
-    print("Note: Run tests via /ask endpoint or update this test code with conversation_id")
+    print("Run tests via /ask endpoint or use tests/test_refactored_flow.py")

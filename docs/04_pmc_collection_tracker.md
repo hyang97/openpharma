@@ -83,6 +83,19 @@ open access[filter] AND
 - **Papers**: 4,386,906
 - **Status**: `not_loaded`
 - **Notes**: Baseline count for 5-year recent paper landscape. This represents the total universe of available papers for potential therapeutic area expansion.
+- **Estimated ingestion time**: ~5,900 hours (245 days wallclock)
+  - Stage 1-1.2: 6 hours (ID collection + citation filtering)
+  - Stage 2: 730 hours (30 days, must run off-peak)
+  - Stage 3: 195 hours (8 days)
+  - Stage 4: 4,970 hours (207 days, potentially optimizable to 1,240h / 52 days with parallelization)
+- **Estimated storage**: ~1.9 TB additional
+  - Documents: ~280 GB
+  - Chunks (text): ~310 GB
+  - Chunks (embeddings): ~570 GB
+  - HNSW indexes: ~460 GB
+  - PostgreSQL overhead: ~280 GB
+- **Total database size after ingestion**: ~2.1 TB (current 165 GB + 1.9 TB new)
+- **Practicality**: Not recommended - would require dedicated infrastructure and months of processing time
 
 ### 2. Filtered Baseline (Article Type Filter)
 - **Date**: 2025-10-30
@@ -90,9 +103,22 @@ open access[filter] AND
 - **Papers**: 869,593
 - **Status**: `not_loaded`
 - **Notes**: 80% reduction from baseline by excluding non-research article types
+- **Estimated ingestion time**: ~1,170 hours (49 days wallclock)
+  - Stage 1-1.2: 1.5 hours (ID collection + citation filtering)
+  - Stage 2: 145 hours (6 days, must run off-peak)
+  - Stage 3: 39 hours (1.6 days)
+  - Stage 4: 985 hours (41 days, potentially optimizable to 245h / 10 days with parallelization)
+- **Estimated storage**: ~380 GB additional
+  - Documents: ~56 GB
+  - Chunks (text): ~61 GB
+  - Chunks (embeddings): ~113 GB
+  - HNSW indexes: ~91 GB
+  - PostgreSQL overhead: ~57 GB
+- **Total database size after ingestion**: ~545 GB (current 165 GB + 380 GB new)
+- **Practicality**: Feasible but large - would require ~2 weeks of processing with optimized embedding parallelization, ~400 GB storage headroom
 
-### 3. Cardiometabolic + Alzheimer's (2020-2025)
-- **Date**: 2025-11-02
+### 3. Cardiometabolic + Alzheimer's (2020-2025) - Time-Graduated Citation Filter
+- **Date**: 2025-11-03
 - **Query**:
 ```
 (
@@ -105,9 +131,29 @@ AND open access[filter]
 AND 2020/01/01:2025/12/31[pdat]
 AND NOT (Review[ptyp] OR Editorial[ptyp] OR Letter[ptyp] OR Comment[ptyp] OR Erratum[ptyp])
 ```
-- **Papers**: 125,494
+- **Citation Filter** (applied via Stage 1.2):
+  - 2020: nih_percentile >= 80 (top 20%)
+  - 2021: nih_percentile >= 70 (top 30%)
+  - 2022: nih_percentile >= 60 (top 40%)
+  - 2023: nih_percentile >= 40 (top 60%)
+  - 2024-2025: All papers (too recent for citation filtering)
+- **Papers (unfiltered)**: 125,494
+- **Papers (after citation filter)**: ~63,500 (estimated 50% reduction)
+- **New papers beyond Collection #1**: ~37,000
 - **Status**: `planned`
-- **Notes**: Combined MeSH + Title/Abstract strategy. Breakdown: Diabetes (67K), Obesity (35K), Alzheimer's (23K), NASH/NAFLD (7K). Estimated ~73K new papers beyond Collection #1.
+- **Notes**: Combined MeSH + Title/Abstract strategy. Breakdown before filtering: Diabetes (67K), Obesity (35K), Alzheimer's (23K), NASH/NAFLD (7K). Time-graduated filtering reduces corpus by ~50% while preserving recent papers and high-impact older research.
+- **Estimated ingestion time**: 50-55 hours (2-3 days wallclock)
+  - Stage 1-1.2: 30 min (ID collection + citation filtering)
+  - Stage 2: 6-7 hours (fetch, must run off-peak)
+  - Stage 3: 2 hours (chunking)
+  - Stage 4: 40-45 hours (embedding, potentially optimizable to 12-15h with parallelization)
+- **Estimated storage**: ~16 GB additional
+  - Documents: ~2.4 GB
+  - Chunks (text): ~2.6 GB
+  - Chunks (embeddings): ~4.8 GB
+  - HNSW indexes: ~3.8 GB
+  - PostgreSQL overhead: ~1.5 GB
+- **Total database size after ingestion**: ~181 GB (current 165 GB + 16 GB new)
 
 ## Therapeutic Area Scoping (2025-10-30)
 All queries include article type filter (NOT Review/Editorial/Letter/Comment/Erratum)
