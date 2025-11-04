@@ -1,30 +1,32 @@
 # OpenPharma
 
-> AI-powered research assistant for pharmaceutical literature
+> Your on-demand pharmaceutical research analyst. Transform multi-day research into minutes. Ask natural language questions about diabetes research and get AI-synthesized answers with verifiable citations from 110K+ research papers.
 
-**[🚀 Live Demo](https://openpharma.byhenry.me)**
+## Live Demo: [openpharma.byhenry.me](https://openpharma.byhenry.me)
 
-Ask questions about diabetes research, get AI-synthesized answers with citations from 110K+ research papers.
+![OpenPharma home screen](images/desktop-home.png)
 
-### Desktop
+### Chat in Browser
 ![Desktop conversation view](images/desktop-convo.png)
 
-### Mobile
+### Chat on Mobile
 <img src="images/mobile-convo.png" alt="Mobile conversation view" width="300">
 
 ## What It Does
 
+Ask questions like:
 - "What are the latest findings on GLP-1 agonists for weight loss?"
 - "Compare SGLT2 inhibitors vs traditional therapies"
+- "What are the safety profiles of SGLT2 inhibitors?"
 
-Built a full-stack RAG system with semantic search, citation tracking, and multi-turn conversations.
+Get instant synthesized answers backed by credible evidence with verifiable citations.
 
-## Stats
+## System Stats
 
-- **110K papers** (PubMed Central 2020-2025 + high-impact historical)
-- **4.7M chunks** with semantic embeddings
-- **165 GB database** (papers + citation metadata)
-- **<$50 total cost** (self-hosted Ollama)
+- **110K papers** from PubMed Central (2020-2025 diabetes research + high-impact historical papers)
+- **4.7M semantic chunks** with 768-dimensional embeddings
+- **165 GB database** including full papers and NIH citation metadata
+- **<$50 total cost** via self-hosted Ollama (embeddings + LLM)
 
 ## Tech Stack
 
@@ -46,12 +48,12 @@ LLM Generation (Llama 3.1 / GPT-4)
 Answer + Citations
 ```
 
-## Key Decisions
+## Key Technical Decisions
 
-- **Self-hosted Ollama:** Reduced embedding costs from $500+ → $0
-- **Citation filtering:** NIH iCite 95th percentile (2.6M papers → 58K high-impact)
-- **Section-aware chunking:** Preserved paper structure for better citations
-- **Cross-encoder reranking:** Improved quality with minimal latency (~0.8s)
+- **Self-hosted Ollama:** Reduced embedding costs from $500+ to $0
+- **NIH iCite citation filtering:** 95th percentile filter reduced 2.6M papers to 58K high-impact historical papers
+- **Section-aware chunking:** Preserves paper structure (abstract, methods, results) for accurate citations
+- **Cross-encoder reranking:** Improves retrieval quality with minimal latency cost (~0.8s)
 
 ## More Info
 
