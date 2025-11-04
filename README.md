@@ -1,87 +1,64 @@
 # OpenPharma
 
-AI-powered search engine for diabetes research literature from PubMed Central.
+> AI-powered research assistant for pharmaceutical literature
 
-**Disclaimer:** This is currently a personal learning project, use information at personal and professional risk. Enjoy and have fun!
+**[🚀 Live Demo](https://openpharma.byhenry.me)**
 
-## What is this?
+Ask questions about diabetes research, get AI-synthesized answers with citations from 110K+ research papers.
 
-A learning project building a RAG (Retrieval Augmented Generation) system that:
-1. Fetches diabetes research papers from PubMed Central
-2. Chunks them intelligently by section (methods, results, etc.)
-3. Generates embeddings for semantic search
-4. Lets you ask questions and get answers with citations
+### Desktop
+![Desktop conversation view](images/desktop-conversation.png)
 
-## Current Status
+### Mobile
+<img src="images/mobile-conversation.png" alt="Mobile conversation view" width="300">
 
-**Working:**
-- Database (Postgres + pgvector)
-- PubMed paper fetcher
-- XML parser (extracts sections from research papers)
-- Document chunker (512 tokens, section-aware)
-- Embedding service (regular + batch API)
-- Logging system
+## What It Does
 
-**Next:**
-- Batch ingestion script (end-to-end pipeline)
-- Test with sample diabetes papers
-- RAG query system
+- "What are the latest findings on GLP-1 agonists for weight loss?"
+- "Compare SGLT2 inhibitors vs traditional therapies"
 
-## Quick Start
+Built a full-stack RAG system with semantic search, citation tracking, and multi-turn conversations.
 
-1. **Start the database:**
-   ```bash
-   docker-compose up -d postgres
-   ```
+## Stats
 
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+- **110K papers** (PubMed Central 2020-2025 + high-impact historical)
+- **4.7M chunks** with semantic embeddings
+- **165 GB database** (papers + citation metadata)
+- **<$50 total cost** (self-hosted Ollama)
 
-3. **Set up environment:**
-   ```bash
-   cp .env.example .env
-   # Add your OPENAI_API_KEY to .env
-   ```
+## Tech Stack
 
-4. **Initialize database:**
-   ```bash
-   python -m app.db.init_db
-   ```
+**Backend:** FastAPI • PostgreSQL + pgvector • Ollama
+**Frontend:** Next.js • TypeScript • Tailwind
+**Pipeline:** 4-stage ingestion (collect → fetch → chunk → embed)
 
-## Project Structure
+## Architecture
 
 ```
-app/
-├── db/              # Database models and setup
-├── ingestion/       # PubMed fetcher, XML parser, chunker, embeddings
-├── logging_config.py
-└── main.py          # FastAPI app
-
-docs/
-├── data_design.md   # How the data pipeline works
-└── logging.md       # Logging guide
-
-data/batches/        # Batch API files (gitignored)
+User Query
+    ↓
+Semantic Search (pgvector) → 4.7M chunks
+    ↓
+Cross-Encoder Reranking → top 3 chunks
+    ↓
+LLM Generation (Llama 3.1 / GPT-4)
+    ↓
+Answer + Citations
 ```
 
-## Documentation
+## Key Decisions
 
-- **[Data Design](docs/data_design.md)** - Detailed pipeline and schema docs
-- **[Logging Guide](docs/logging.md)** - How to use logging
-- **[CLAUDE.md](CLAUDE.md)** - Full project context
+- **Self-hosted Ollama:** Reduced embedding costs from $500+ → $0
+- **Citation filtering:** NIH iCite 95th percentile (2.6M papers → 58K high-impact)
+- **Section-aware chunking:** Preserved paper structure for better citations
+- **Cross-encoder reranking:** Improved quality with minimal latency (~0.8s)
 
-## Tools
+## More Info
 
-- **FastAPI** - API framework
-- **Postgres + pgvector** - Vector database
-- **OpenAI** - Embeddings
-- **Docker** - Services
+See [docs/](docs/) for detailed design decisions, architecture, and implementation.
 
-## Learning Goals
+Full case study coming soon.
 
-- Build a RAG system from scratch
-- Understand vector embeddings
-- Learn data pipeline design
-- Practice with modern AI tools
+---
+
+**Note:** This is a personal learning project. Not for clinical/professional use.
