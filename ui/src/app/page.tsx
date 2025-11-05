@@ -235,7 +235,7 @@ export default function Chat() {
               <span className="text-2xl text-slate-300">☰</span>
             </button>
 
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-4 text-white text-center">OpenPharma</h1>
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-4 text-white text-center" style={{ fontFamily: 'var(--font-noto-sans-jp)' }}>OpenPharma</h1>
             <p className="text-base sm:text-lg mb-8 sm:mb-12 text-center leading-relaxed">
               <span className="bg-accent text-white px-2 py-1 rounded" style={{ boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone' }}>Your on-demand pharmaceutical research analyst</span>
             </p>

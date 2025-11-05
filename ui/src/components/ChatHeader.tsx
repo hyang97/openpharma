@@ -20,7 +20,7 @@ export function ChatHeader({ onReturnHome, onToggleSidebar }: ChatHeaderProps) {
 
         <div className="flex-1 md:flex-none self-center">
           <button onClick={onReturnHome} className="text-left hover:opacity-80 transition-opacity cursor-pointer block">
-            <h1 className="text-base md:text-xl font-bold leading-tight">OpenPharma</h1>
+            <h1 className="text-base md:text-xl font-bold leading-tight" style={{ fontFamily: 'var(--font-noto-sans-jp)' }}>OpenPharma</h1>
             <p className="text-[10px] md:text-xs text-slate-400 hidden sm:block leading-tight">AI-Powered Research Intelligence</p>
           </button>
         </div>
