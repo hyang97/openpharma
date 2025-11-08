@@ -10,8 +10,7 @@ import os
 import re
 import ollama
 
-from app.models import SearchResult, RAGResponse
-from app.retrieval import semantic_search, hybrid_retrieval
+from app.models import SearchResult
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -97,50 +96,25 @@ Notes:
     return messages
     
 
+async def generate_response_stream(
+    user_message: str, 
+    chunks: List[SearchResult], 
+    use_local: bool = True,
+    conversation_history: Optional[List[dict]] = None
+):
+    pass
+
 
 def generate_response(
     user_message: str,
-    conversation_id: str,
-    top_k: int = 20,
-    top_n: int = 5,
+    chunks: List[SearchResult],
     use_local: bool = True,
-    use_reranker: bool = False,
     conversation_history: Optional[List[dict]] = None
-) -> RAGResponse:
-    """
-    Generate a response using RAG (retrieval + LLM generation).
-
-    Args:
-        user_message: Natural language question from user
-        conversation_id: Unique conversation identifier
-        top_k: Number of chunks to retrieve (default: 20)
-        top_n: Number of chunks to use in generation (default: 5)
-        use_local: Use Ollama if True, OpenAI if False (default: True)
-        use_reranker: Rerank chunks if True, skip reranking step if False (default: False)
-        conversation_history: Previous messages for multi-turn conversations
-
-    Returns:
-        RAGResponse with synthesized response and citations
-    """
-    start_time = time.time()
-
-    # Fetch top k chunks
-    retrieval_start = time.time()
-    chunks = semantic_search(user_message, top_k, top_n, use_reranker)
-    # chunks = hybrid_retrieval(
-    #     query=user_message,
-    #     conversation_history=conversation_history,
-    #     top_k=top_k,
-    #     top_n=top_n,
-    #     use_reranker
-    # )
+) -> str:
+    """Generate response text using provided chunks (retrieval done by caller)"""
     
-
-    retrieval_time = (time.time() - retrieval_start) * 1000
-    logger.info(f"Retrieval time: {retrieval_time:.0f}ms")
-
     # Build messages array for multi-turn chat
-    messages = build_messages(user_message, chunks, conversation_history=conversation_history)
+    messages = build_messages(user_message, chunks, conversation_history)
     logger.debug(f"Messages:\n{messages}\n")
 
     # Call LLM
@@ -156,6 +130,7 @@ def generate_response(
             )
             llm_time = (time.time() - llm_start) * 1000
             logger.info(f"LLM generation time: {llm_time:.0f}ms")
+            return response['message']['content']
         else:
             # TODO: Add OpenAI integration later
             logger.warning("OpenAI integration requested but not implemented")
@@ -165,14 +140,6 @@ def generate_response(
         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
 
 
-    return RAGResponse(
-        user_message=user_message,
-        generated_response=response['message']['content'],
-        prompt_literature_chunks=chunks,  # Include ALL chunks from prompt (new + historical)
-        llm_provider="ollama" if use_local else "openai",
-        generation_time_ms=(time.time() - start_time) * 1000,
-        conversation_id=conversation_id
-    )
 
 if __name__ == "__main__":
     from app.logging_config import setup_logging

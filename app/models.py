@@ -48,24 +48,6 @@ class Citation:
     authors: Optional[List[str]] = None
     publication_date: Optional[str] = None
 
-
-@dataclass
-class RAGResponse:
-    """
-    Complete answer with metadata from RAG generation.
-
-    Output from generate_response() containing the LLM's answer with
-    embedded [PMCxxxxx] citations and the literature chunks that were
-    in the prompt.
-    """
-    user_message: str
-    generated_response: str  # Contains embedded [PMCxxxxx] citations
-    prompt_literature_chunks: List[SearchResult]  # All chunks in <Literature> section
-    llm_provider: str
-    generation_time_ms: float
-    conversation_id: str
-
-
 @dataclass
 class Conversation:
     """

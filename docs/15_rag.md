@@ -14,10 +14,14 @@ The RAG pipeline has two main stages:
 app/
 ├── retrieval/
 │   ├── __init__.py
-│   └── semantic_search.py     # Vector similarity search
-└── rag/
-    ├── __init__.py
-    └── generation.py           # LLM synthesis with citations
+│   ├── semantic_search.py        # Vector similarity search
+│   └── reranker.py               # Cross-encoder reranking
+├── rag/
+│   ├── __init__.py
+│   ├── generation.py             # LLM synthesis
+│   ├── conversation_manager.py   # Conversation state & citations
+│   └── response_processing.py    # Citation extraction & display formatting
+└── main.py                       # FastAPI endpoints
 ```
 
 ## 1. Retrieval
@@ -113,88 +117,130 @@ Reranks retrieved chunks using a cross-encoder model for improved relevance.
 
 ## 2. Generation (`app/rag/generation.py`)
 
-### Function: `answer_query(query: str, top_k: int = 10, llm_provider: str = "ollama") -> AnswerResult`
+### Function: `generate_response(user_message: str, chunks: List[SearchResult], use_local: bool = True, conversation_history: Optional[List[dict]] = None) -> str`
 
-Generates synthesized answers with inline citations.
+Generates synthesized answers with inline `[PMCxxxxxx]` citations.
 
-**Implementation (planned):**
-1. Call `semantic_search()` to get relevant chunks
-2. Build prompt with numbered chunks (format: [1], [2], etc.)
-3. Call LLM (Ollama Llama 3.1 8B or OpenAI GPT-4)
-4. Parse response and build Citation objects
-5. Return AnswerResult
+**Implementation:**
+1. Build messages array with system prompt, conversation history, and literature chunks
+2. Call LLM (Ollama Llama 3.1 8B or OpenAI GPT-4)
+3. Return raw response text with `## Answer` and `## References` headings
 
-**Citation format:**
+**LLM Response Format:**
 ```
-Answer: "Metformin is the first-line treatment [1]. GLP-1 agonists provide cardiovascular benefits [2][3]."
+## Answer:
+Metformin is the first-line treatment [PMC12345]. GLP-1 agonists provide cardiovascular benefits [PMC67890][PMC11111].
 
-Citations:
-[1] Smith et al. 2023, "Diabetes Guidelines", PMC12345
-[2] Jones et al. 2024, "GLP-1 Outcomes", PMC67890
-[3] Lee et al. 2023, "Cardiovascular Safety", PMC11111
+## References:
+[PMC12345] Smith et al. 2023, "Diabetes Guidelines"
+[PMC67890] Jones et al. 2024, "GLP-1 Outcomes"
+[PMC11111] Lee et al. 2023, "Cardiovascular Safety"
 ```
 
-**AnswerResult fields:**
-- `query` - Original question
-- `answer` - Synthesized response with inline citations
-- `citations` - List of Citation objects
-- `chunks_used` - Source SearchResult chunks
-- `llm_provider` - "ollama" or "openai"
-- `generation_time_ms` - Total latency
+**Design Notes:**
+- Retrieval done by caller (endpoint level)
+- Returns raw text only (no RAGResponse object)
+- Citations in `[PMCxxxxxx]` format (renumbered later by `response_processing.py`)
+- Headings stripped for display by `prepare_messages_for_display()`
 
-**Citation fields:**
-- `number` - Citation number [1], [2], etc.
-- `title`, `source_id` (PMC ID)
-- `authors`, `publication_date` (optional)
-- `chunk_id` - Original chunk for traceability
+## 3. Response Processing (`app/rag/response_processing.py`)
+
+### Heading Detection Patterns
+
+Standardized regex patterns for consistent detection across streaming and non-streaming:
+
+```python
+# Matches: "## Answer", "##Answer", "## Answer:", etc.
+ANSWER_HEADING_PATTERN = r'(?:^|\n)\s*##\s*Answer\s*:?\s*'
+
+# Matches: "## References", "##References", "References:", "**References**"
+REFERENCES_HEADING_PATTERN = r'(?:^|\n)\s*(?:##\s*References|References\s*:|[\*]{2}References[\*]{2})\s*:?\s*'
+```
+
+### Function: `extract_and_store_citations(generated_response: str, chunks: List[SearchResult], conversation_id: str, conversation_manager: ConversationManager) -> List[Citation]`
+
+Extracts `[PMCxxxxxx]` citations from answer section only (excludes bibliography).
+
+**Implementation:**
+1. Extract answer section using `extract_answer_section()` (before `## References`)
+2. Find all `[PMCxxxxxx]` citations in answer text using regex
+3. Build Citation objects via ConversationManager (assigns conversation-wide numbers)
+4. Return numbered citations
+
+**Key Behavior:**
+- Only counts citations actually used in answer (not sources listed in bibliography)
+- Preserves order of first appearance
+- Deduplicates citations
+
+### Function: `prepare_messages_for_display(messages: List[dict], conversation_id: str, conversation_manager: ConversationManager) -> List[dict]`
+
+Prepares assistant messages for frontend display.
+
+**Implementation:**
+1. Strip `## Answer` heading using `strip_answer_heading()`
+2. Strip `## References` section using `strip_references_section()`
+3. Renumber citations: `[PMCxxxxxx] → [1]` using conversation-wide mapping
+4. Return cleaned messages
+
+## 4. Conversation Management (`app/rag/conversation_manager.py`)
+
+Manages conversation state, messages, and conversation-wide citation numbering.
+
+**Key Features:**
+- In-memory conversation storage with auto-cleanup (1 hour TTL)
+- Conversation-wide citation numbering (first appearance gets [1], second gets [2], etc.)
+- Multi-turn conversation support with message history
+
+**See `docs/22_conversation_management.md` for full details**
 
 ## Design Decisions
 
-**Why separate retrieval and generation?**
-- Retrieval can be tested/optimized independently
-- Easy to swap retrieval strategies (dense, sparse, hybrid)
-- Generation can be reused with different retrieval sources
-- Clear separation of concerns
+**Why separate retrieval at endpoint level?**
+- Generation functions testable in isolation
+- Easy to add streaming variant with same retrieval logic
+- Clear separation: endpoints orchestrate, generation functions generate
 
-**Why call semantic_search() internally?**
-- Simpler API - one function does end-to-end RAG
-- Users don't need to understand retrieval details
-- Can still use semantic_search() directly for debugging
+**Why [PMCxxxxxx] format from LLM?**
+- Unambiguous source identifiers (no renumbering needed until display)
+- Stable across conversation turns (citations don't change numbers when new sources added)
+- Easy to verify citations against prompt chunks
 
-**Why inline citation format [1], [2]?**
-- Standard academic convention
-- Easy for LLM to generate
-- Simple to parse and verify
-- Clean reading experience
+**Why strip headings for display?**
+- Cleaner UX (users don't need to see structural markers)
+- Headings are for LLM structuring only
+- Allows flexibility in LLM response format without breaking frontend
 
-**Why support both Ollama and OpenAI?**
-- Ollama for local development ($0 cost)
-- OpenAI for higher quality demos (GPT-4)
-- Learn to handle multiple LLM providers
+**Why conversation-wide citation numbering?**
+- Consistent citation numbers across conversation (citation [1] stays [1] even in turn 5)
+- Users can reference citations from previous turns
+- Simpler mental model for multi-turn conversations
 
 ## Usage Example
 
 ```python
-from app.rag import answer_query
+from app.rag.generation import generate_response
+from app.retrieval import semantic_search
+from app.rag.response_processing import extract_and_store_citations
 
-# Ask a question
-result = answer_query(
-    "What are GLP-1 agonists used for in diabetes treatment?",
-    top_k=10,
-    llm_provider="ollama"
+# 1. Retrieve chunks
+chunks = semantic_search("What are GLP-1 agonists?", top_k=20, top_n=5)
+
+# 2. Generate response
+generated_text = generate_response(
+    user_message="What are GLP-1 agonists?",
+    chunks=chunks,
+    use_local=True
 )
+# Returns: "## Answer:\nGLP-1 agonists are... [PMC12345]\n\n## References:\n[PMC12345]..."
 
-# Print answer
-print(result.answer)
-# "GLP-1 agonists are used for type 2 diabetes treatment [1][2].
-#  They provide weight loss benefits [1] and cardiovascular protection [3]."
-
-# Print citations
-for citation in result.citations:
-    print(f"[{citation.number}] {citation.title} (PMC{citation.source_id})")
-# [1] Smith et al. 2023, "GLP-1 Mechanisms" (PMC12345)
-# [2] Jones et al. 2024, "Diabetes Therapy" (PMC67890)
-# [3] Lee et al. 2023, "Cardiovascular Safety" (PMC11111)
+# 3. Extract citations
+citations = extract_and_store_citations(
+    generated_response=generated_text,
+    chunks=chunks,
+    conversation_id=conv_id,
+    conversation_manager=manager
+)
+# Returns: [Citation(number=1, source_id="12345", title="...", ...)]
 ```
 
 ## 3. Multi-Turn Conversations (Phase 1 - In Progress)

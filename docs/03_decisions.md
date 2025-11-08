@@ -43,7 +43,7 @@ Key technical decisions made during OpenPharma development.
 **Problem**: Multi-turn conversations broke when LLM saw previous responses with numbered citations [1], [2] instead of [PMC...] format.
 **Decision**: Store messages with original [PMC...] format in conversation history, only renumber to [1], [2] when sending to frontend.
 **Why**: Keeps LLM prompts consistent (always uses PMC IDs), prevents confusion in follow-up responses, separates storage from display concerns.
-**Implementation**: `generation.py` returns [PMC...], `main.py` stores [PMC...], `renumber_text_for_display()` converts to [1], [2] only for API responses.
+**Implementation**: `generation.py` returns [PMC...], `conversation_manager` stores [PMC...], `prepare_messages_for_display()` (in `response_processing.py`) converts to [1], [2] only for API responses.
 **Tradeoff**: Slight overhead from renumbering on every request, but negligible compared to LLM generation time.
 
 ## 2025-10-22: Revert hybrid retrieval - Use semantic search only
