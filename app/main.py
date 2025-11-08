@@ -1,15 +1,18 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import time
 import os
 import re
 from typing import Optional, List
 
-from app.models import Citation, RAGResponse
+from app.models import Citation, SearchResult
 from app.db.database import get_db
 from app.logging_config import setup_logging, get_logger
 from app.rag.generation import generate_response
+from app.retrieval import semantic_search, hybrid_retrieval
 from app.rag.conversation_manager import ConversationManager
+from app.rag.response_processing import prepare_messages_for_display, extract_and_store_citations
 
 # Initialize conversation manager on startup
 conversation_manager = ConversationManager(max_age_seconds=3600)
@@ -40,6 +43,8 @@ class UserRequest(BaseModel):
     use_local: Optional[bool] = None
     conversation_id: Optional[str] = None
     use_reranker: bool = False
+    top_n: int = 20
+    top_k: int = 5
 
 class ConversationSummaryResponse(BaseModel):
     conversation_id: str 
@@ -63,111 +68,6 @@ class ChatResponse(BaseModel):
     llm_provider: str
     generation_time_ms: float
     conversation_id: str
-
-def prepare_messages_for_display(messages: List[dict], conversation_id: str) -> List[dict]:
-    """
-    Prepare messages for frontend: strip headings, renumber citations [PMCxxxx] -> [1].
-    """
-    # Fetch citation mapping once for efficiency
-    all_citations = conversation_manager.get_all_citations(conversation_id)
-    pmc_to_number = {cit.source_id: cit.number for cit in all_citations}
-
-    prepared_messages = []
-    for msg in messages:
-        if msg['role'] == 'assistant':
-            content = msg['content']
-
-            # Strip "## Answer" heading if present (case-insensitive)
-            # Matches: "## Answer", "##Answer", "## Answer:", "## Answer :", etc.
-            # \s* allows any whitespace between ## and Answer
-            # :? allows optional colon after Answer
-            # [\s:]* captures any trailing whitespace or colons
-            # Must be at start of line (^) or start of string (\A)
-            content = re.sub(r'^##\s*Answer\s*:?\s*\n?', '', content.strip(), flags=re.IGNORECASE | re.MULTILINE)
-
-            # Strip leading colons and whitespace (artifact from heading removal)
-            content = content.lstrip(': \t\n')
-
-            # Strip "## References" section and everything after it (case-insensitive)
-            # Matches multiple formats:
-            # - "## References"
-            # - "##References"
-            # - "## References:"
-            # - "References:"
-            # - "**References**" (bold markdown)
-            # .*$ captures everything from the heading to end of text
-            content = re.sub(
-                r'(?:^|\n)\s*(?:##\s*References|References\s*:|[\*]{2}References[\*]{2})\s*:?\s*.*$',
-                '',
-                content,
-                flags=re.IGNORECASE | re.DOTALL | re.MULTILINE
-            )
-
-            # Strip trailing whitespace
-            content = content.rstrip()
-
-            # Replace all [PMCxxxx] with [number]
-            # Supports both single citations [PMC123] and comma-separated [PMC123, PMC456]
-            for source_id, number in pmc_to_number.items():
-                # Pattern matches:
-                # - [PMC123] -> [1]
-                # - [PMC123, PMC456] -> [1, 2] (when both are replaced)
-                # - [ PMC123 ] -> [1] (with whitespace)
-                # - [PMC123,PMC456] -> [1,2] (no space after comma)
-                # Uses lookahead to match PMC ID followed by comma, space, or closing bracket
-                pattern = r'PMC' + source_id + r'(?=\s*[,\]])'
-                content = re.sub(pattern, str(number), content)
-
-            prepared_messages.append({
-                'role': msg['role'],
-                'content': content
-            })
-        else:
-            # User messages pass through unchanged
-            prepared_messages.append(msg)
-
-    return prepared_messages
-
-
-def extract_and_store_citations(result: RAGResponse, conversation_id: str) -> List[Citation]:
-    """
-    Extracts [PMCxxxxx] citations from generated_response text, builds Citation
-    objects, assigns conversation-wide numbers and store in conversation manager.
-    """
-    # Extract all PMC IDs from brackets in response text
-    cited_pmc_ids = []
-    bracket_contents = re.findall(r'\[([^\]]+)\]', result.generated_response)
-    for content in bracket_contents:
-        # Extract PMC IDs, handling formats [PMC123], [PMC123, PMC456], [ PMC123 ], [PMC123,PMC456]
-        pmcs = re.findall(r'PMC(\d+)', content)
-        cited_pmc_ids.extend(pmcs)
-
-    # Get unique PMC IDs, preserving order of first appearance
-    seen = set()
-    unique_pmc_ids = []
-    for pmc_id in cited_pmc_ids:
-        if pmc_id not in seen:
-            seen.add(pmc_id)
-            unique_pmc_ids.append(pmc_id)
-
-    # Build lookup map: source_id -> SearchResult
-    chunk_map = {chunk.source_id: chunk for chunk in result.prompt_literature_chunks}
-
-    # Build Citation objects via ConversationManager
-    numbered_citations = []
-    for pmc_id in unique_pmc_ids:
-        chunk = chunk_map.get(pmc_id)
-        if chunk:
-            # Let ConversationManager create/retrieve Citation with proper number
-            citation = conversation_manager.get_or_create_citation(
-                conversation_id=conversation_id,
-                chunk=chunk
-            )
-            numbered_citations.append(citation)
-
-    return numbered_citations
-
-
 
 @app.on_event("startup")
 async def startup_event():
@@ -202,7 +102,7 @@ async def get_conversation_detail(conversation_id: str):
     first_message = next((m["content"] for m in c.messages if m["role"] == "user"), "")
 
     # Prepare messages for frontend display
-    display_messages = prepare_messages_for_display(c.messages, conversation_id)
+    display_messages = prepare_messages_for_display(c.messages, conversation_id, conversation_manager)
 
     # Build and return the response
     return ConversationDetailResponse(
@@ -213,9 +113,6 @@ async def get_conversation_detail(conversation_id: str):
         messages=display_messages,
         citations=citations
     )
-
-
-
 
 @app.post("/chat", response_model=ChatResponse)
 async def send_message(request: UserRequest):
@@ -243,23 +140,32 @@ async def send_message(request: UserRequest):
     conversation_manager.add_message(conversation_id, "user", request.user_message)
 
     try:
+        # Fetch top k chunks
+        retrieval_start = time.time()
+        chunks = semantic_search(request.user_message, request.top_k, request.top_n, request.use_reranker)
+        # chunks = hybrid_retrieval(request.user_message, conversation_history, request.top_k, request.top_n, request.use_reranker)
+
+        retrieval_time = (time.time() - retrieval_start) * 1000
+        logger.info(f"Retrieval time: {retrieval_time:.0f}ms")
+
         # Use RAG pipeline - returns RAGResponse with [PMC...] format
-        result = generate_response(
+        generation_start = time.time()
+        generated_response = generate_response(
             user_message=request.user_message, 
-            conversation_id=conversation_id, 
             use_local=use_local, 
-            use_reranker=request.use_reranker,
+            chunks=chunks,
             conversation_history=conversation_history
             )
+        generation_time_ms = (time.time() - generation_start) * 1000
 
         # Extract and store citations from response (assigns conversation-wide numbers)
-        numbered_response_citations = extract_and_store_citations(result, conversation_id)
+        numbered_response_citations = extract_and_store_citations(generated_response, chunks, conversation_id, conversation_manager)
 
         # Store messages with ORIGINAL [PMC...] format for LLM context
         conversation_manager.add_message(
             conversation_id,
             "assistant",
-            result.generated_response,
+            generated_response,
             cited_source_ids=[cit.source_id for cit in numbered_response_citations], 
             cited_chunk_ids=[cit.chunk_id for cit in numbered_response_citations]
         )
@@ -269,21 +175,22 @@ async def send_message(request: UserRequest):
 
         # Prepare response text for frontend display only (wrap in list for single message)
         display_response = prepare_messages_for_display(
-            [{'role': 'assistant', 'content': result.generated_response}],
-            conversation_id
+            [{'role': 'assistant', 'content': generated_response}],
+            conversation_id,
+            conversation_manager
         )[0]['content']
 
-        logger.info(f"Generated RAG response with {len(numbered_response_citations)} citations in {result.generation_time_ms:.0f}ms")
+        logger.info(f"Generated RAG response with {len(numbered_response_citations)} citations in {generation_time_ms:.0f}ms")
 
         # Return ChatResponse with renumbered text for display
         return ChatResponse(
-            user_message=result.user_message,
+            user_message=request.user_message,
             generated_response=display_response,
             response_citations=numbered_response_citations,  # Use numbered citations
             conversation_citations=conversation_citations,
-            llm_provider=result.llm_provider,
-            generation_time_ms=result.generation_time_ms,
-            conversation_id=result.conversation_id
+            llm_provider="ollama" if use_local else "openai",
+            generation_time_ms=generation_time_ms,
+            conversation_id=conversation_id
         )
 
     except Exception as e:

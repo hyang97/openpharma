@@ -4,19 +4,25 @@
 
 Add Server-Sent Events (SSE) streaming to provide progressive text display as the LLM generates tokens, improving perceived performance.
 
+**Prerequisites:** Understanding of current architecture
+- Backend: See `docs/15_rag.md` for generation pipeline, response processing, and heading patterns
+- Frontend: See `docs/22_conversation_management.md` for conversation state management
+
 **Design Principles:**
 1. Single source of truth (only `/chat/stream` endpoint, no parallel requests)
 2. Reuse existing loading state management and refetch patterns
 3. Stream continues in background if user switches away
-4. Backend filters content between `## Answer` and `## References` markers
+4. Backend filters content between `## Answer` and `## References` markers using standardized patterns
 5. Always refetch after streaming for properly formatted messages
 
 ## Current Flow (Non-Streaming)
 
-1. Retrieval: Semantic search → rerank
-2. Generation: LLM generates with `[PMCxxxxxx]` citations, `## Answer` and `## References` headings
-3. Post-processing: Extract citations, strip headings, renumber `[PMCxxxxxx] → [1]`
-4. Response: Return formatted text + citations
+See `docs/15_rag.md` for complete pipeline details.
+
+1. **Retrieval** (endpoint level): `semantic_search()` → top 5 reranked chunks
+2. **Generation**: `generate_response()` returns text with `[PMCxxxxxx]` citations, `## Answer` and `## References` headings
+3. **Post-processing**: `extract_and_store_citations()` extracts citations from answer section, `prepare_messages_for_display()` strips headings and renumbers `[PMCxxxxxx] → [1]`
+4. **Response**: Return formatted text + citations via `/chat` endpoint
 
 ## State Management
 
@@ -43,72 +49,146 @@ User switches away: `'loading'/'streaming' → 'loading' → null`
 
 ## Backend Implementation
 
-### 1. Streaming Generator (`app/rag/generation.py`)
+### Streaming Generator (`app/rag/generation.py`)
+
+**Note:** Use standardized heading patterns from `app/rag/response_processing.py`:
+- `ANSWER_HEADING_PATTERN` - detects `## Answer` heading
+- `REFERENCES_HEADING_PATTERN` - detects `## References` heading
 
 ```python
-async def generate_response_stream(...):
+from app.rag.response_processing import ANSWER_HEADING_PATTERN, REFERENCES_HEADING_PATTERN
+
+async def generate_response_stream(
+    user_message: str,
+    conversation_id: str,
+    chunks: List[SearchResult],
+    conversation_history: Optional[List[dict]] = None
+):
     """
-    Buffers tokens until ## Answer detected, streams until ## References detected.
-    Yields: {"type": "token", "content": "..."} or {"type": "done", "full_response": "..."}
+    Async generator that streams response tokens, filtering content between
+    ## Answer and ## References markers.
+
+    Yields:
+        dict: {"type": "token", "content": "..."}
+        dict: {"type": "done", "full_response": "..."}
     """
+    # Build messages (reuse existing function)
+    messages = build_messages(user_message, chunks, conversation_history)
+
+    # Start Ollama streaming
+    client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+    stream = client.chat(
+        model=OLLAMA_MODEL,
+        messages=messages,
+        stream=True,
+        options={'keep_alive': -1}
+    )
+
+    # State machine variables
     buffer = ""
     streaming_started = False
     answer_content = ""
     full_response = ""
+    token_count = 0
 
-    for chunk in ollama_stream:
+    for chunk in stream:
+        # Extract token from Ollama response
+        if not chunk.get('message', {}).get('content'):
+            continue
+
         token = chunk['message']['content']
         buffer += token
         full_response += token
+        token_count += 1
 
+        # State 1: Waiting for ## Answer heading
         if not streaming_started:
-            match = re.search(r'##\s*Answer\s*:?\s*\n?', buffer, re.IGNORECASE)
+            # Use standardized pattern for consistency
+            match = re.search(ANSWER_HEADING_PATTERN, buffer, re.IGNORECASE)
             if match:
+                # Found heading, start streaming from after it
                 streaming_started = True
                 answer_content = buffer[match.end():]
                 if answer_content:
                     yield {"type": "token", "content": answer_content}
                 buffer = ""
+            elif token_count > 100:
+                # Fallback: No heading after 100 tokens, start streaming all tokens, yield the full buffer
+                streaming_started = True
+                yield {"type": "token", "content": buffer}
+                answer_content = buffer
+                buffer = ""
+
+        # State 2: Streaming (between ## Answer and ## References)
         else:
             answer_content += token
-            check_window = answer_content[-50:]
-            if re.search(r'##\s*References', check_window, re.IGNORECASE):
-                answer_content = re.sub(r'\s*##\s*References.*$', '', answer_content, flags=re.IGNORECASE | re.DOTALL)
+
+            # Check last 50 chars for ## References (handles multi-token headers)
+            check_window = answer_content[-50:] if len(answer_content) > 50 else answer_content
+            if re.search(REFERENCES_HEADING_PATTERN, check_window, re.IGNORECASE):
+                # Found References marker, stop streaming
+                # Strip the ## References part from accumulated content
+                answer_content = re.sub(
+                    r'\s*##\s*References.*$',
+                    '',
+                    answer_content,
+                    flags=re.IGNORECASE | re.DOTALL
+                )
                 break
             else:
+                # Safe to stream this token
                 yield {"type": "token", "content": token}
 
+    # Stream complete, send full response for backend processing
     yield {"type": "done", "full_response": full_response.strip()}
 ```
 
-**Fallback:** If no `## Answer` after 100 tokens, start streaming anyway.
-
-### 2. Streaming Endpoint (`app/main.py`)
+### Streaming Endpoint (`app/main.py`)
 
 ```python
+import asyncio
+
 @app.post("/chat/stream")
 async def send_message_stream(request: UserRequest):
     """Streams tokens via SSE, saves message after completion."""
     conversation_id = request.conversation_id or conversation_manager.create_conversation()
     conversation_manager.add_message(conversation_id, "user", request.user_message)
-    chunks = semantic_search(...)
+
+    # Retrieval at endpoint level (same as /chat)
+    chunks = semantic_search(
+        request.user_message,
+        top_k=20,
+        top_n=5,
+        use_reranker=request.use_reranker
+    )
 
     async def event_generator():
         full_response = ""
         try:
             yield f"data: {json.dumps({'type': 'start', 'conversation_id': conversation_id})}\n\n"
 
-            async for chunk in generate_response_stream(...):
-                if chunk["type"] == "token":
-                    yield f"data: {json.dumps(chunk)}\n\n"
-                elif chunk["type"] == "done":
-                    full_response = chunk["full_response"]
+            # Add 3-minute timeout
+            async with asyncio.timeout(180):
+                async for chunk in generate_response_stream(...):
+                    if chunk["type"] == "token":
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                    elif chunk["type"] == "done":
+                        full_response = chunk["full_response"]
 
             # Extract citations and save (same as /chat endpoint)
-            citations = extract_and_store_citations(...)
-            conversation_manager.add_message(conversation_id, "assistant", full_response, ...)
+            citations = extract_and_store_citations(full_response, chunks, conversation_id)
+            conversation_manager.add_message(
+                conversation_id,
+                "assistant",
+                full_response,
+                cited_source_ids=[c.source_id for c in citations],
+                cited_chunk_ids=[c.chunk_id for c in citations]
+            )
 
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        except asyncio.TimeoutError:
+            conversation_manager.delete_last_message(conversation_id)
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Generation timeout'})}\n\n"
         except Exception as e:
             conversation_manager.delete_last_message(conversation_id)
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
@@ -129,6 +209,8 @@ async def send_message_stream(request: UserRequest):
 
 ```typescript
 const startStreaming = async (conversationId: string, message: string) => {
+  let reader = null
+  let timeoutId = null
   try {
     const response = await fetch(`${API_URL}/chat/stream`, {
       method: 'POST',
@@ -136,10 +218,19 @@ const startStreaming = async (conversationId: string, message: string) => {
       body: JSON.stringify({ user_message: message, conversation_id: conversationId, use_reranker: true })
     })
 
-    const reader = response.body.getReader()
+    reader = response.body.getReader()
     const decoder = new TextDecoder()
     let streamedContent = ''
     let hasStartedStreaming = false
+    let lastTokenTime = Date.now()
+
+    // Timeout if no data received for 60s
+    timeoutId = setInterval(() => {
+      if (Date.now() - lastTokenTime > 60000) {
+        reader?.cancel()
+        throw new Error('Stream timeout')
+      }
+    }, 5000)
 
     while (true) {
       const { done, value } = await reader.read()
@@ -154,6 +245,7 @@ const startStreaming = async (conversationId: string, message: string) => {
 
         if (data.type === 'token') {
           streamedContent += data.content
+          lastTokenTime = Date.now()
 
           if (conversationId === currentConversationRef.current) {
             // User watching - switch to streaming, update UI
@@ -215,6 +307,9 @@ const startStreaming = async (conversationId: string, message: string) => {
     console.error('Streaming error:', error)
     setLoadingConversations(prev => new Map(prev).set(conversationId, 'error'))
     setInput(message)  // Restore for retry
+  } finally {
+    if (timeoutId) clearInterval(timeoutId)
+    if (reader) reader.cancel()
   }
 }
 ```
