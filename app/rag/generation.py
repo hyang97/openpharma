@@ -12,11 +12,15 @@ import ollama
 
 from app.models import SearchResult
 from app.logging_config import get_logger
+from app.rag.response_processing import ANSWER_HEADING_PATTERN, REFERENCES_HEADING_PATTERN
 
 logger = get_logger(__name__)
 
 # Model configuration - change this to experiment with different models
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+
+# Number of tokens to lookahead for ## References
+LOOKAHEAD_LENGTH = 5
 
 
 def build_messages(user_message: str, chunks: list[SearchResult], conversation_history: Optional[List[dict]]) -> List[dict]:
@@ -102,7 +106,101 @@ async def generate_response_stream(
     use_local: bool = True,
     conversation_history: Optional[List[dict]] = None
 ):
-    pass
+    """
+    Response text generator that streams response tokens, filtering content by ## Answer and ## References
+    
+    Yields:
+        dict: {"type": "token", "content": "..."}
+        dict: {"type": "done", "full_response": "..."}
+    """
+    if not use_local:
+        # TODO: Add OpenAI integration later
+        logger.warning("OpenAI integration requested but not implemented")
+        yield {"type": "error", "message": "OpenAI streaming not yet implemented"}
+        return
+
+    # Build messages
+    messages = build_messages(user_message, chunks, conversation_history)
+
+    # Start Ollama streaming
+    client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+    stream = client.chat(model=OLLAMA_MODEL, messages=messages, stream=True, options={'keep_alive': -1})
+
+    # Stores initial tokens in string, waiting to hit ## Answer
+    preamble_buffer = ""
+
+    # Stores tokens in list to look ahead for ## References
+    lookahead_buffer = []
+    
+    streaming_started = False 
+    references_in_buffer = False
+    answer_content = ""
+    full_response = ""
+    token_count = 0
+
+    for chunk in stream:
+        # Skip empty/missing content
+        if not chunk.get('message', {}).get('content'):
+            continue 
+
+        # Extract token from Ollama response
+        token = chunk['message']['content']
+        preamble_buffer += token 
+        full_response += token 
+        token_count += 1
+
+        # State 1: Not streaming yet, add to preamble, waiting for ## Answer heading
+        if not streaming_started:
+            match = re.search(ANSWER_HEADING_PATTERN, preamble_buffer, re.IGNORECASE)
+
+            if match: 
+                # Found ## Answer, start streaming all tokens after it
+                streaming_started = True 
+                answer_content = preamble_buffer[match.end():]
+                if answer_content:
+                    lookahead_buffer.append(answer_content)
+
+            elif token_count > 100:
+                # No header found, but it's been 100 tokens, yield full preamble and start streaming anyway
+                streaming_started = True 
+                answer_content = preamble_buffer 
+                lookahead_buffer.append(answer_content)
+        
+        # State 2: Currently streaming, keep a 5-token lookahead to detect ## References to stop
+        else:
+            answer_content += token 
+            lookahead_buffer.append(token)
+
+            # Check if ## References is in the lookahead buffer
+            lookahead_text = ''.join(lookahead_buffer)
+            if re.search(REFERENCES_HEADING_PATTERN, lookahead_text, re.IGNORECASE):
+                references_in_buffer = True
+
+                # Yield text before ## References
+                text_before_references = re.sub(
+                    REFERENCES_HEADING_PATTERN + r'.*$', # Match ## References and everything after 
+                    '', # Replace with empty string 
+                    lookahead_text,
+                    flags=re.IGNORECASE | re.DOTALL
+                ).rstrip()
+
+                if text_before_references:
+                    yield {"type": "token", "content": text_before_references}
+                break
+
+            while len(lookahead_buffer) > LOOKAHEAD_LENGTH:
+                safe_token = lookahead_buffer.pop(0)
+                yield {"type": "token", "content": safe_token}
+        
+    
+    # If we ended without references, flush remaining tokens in lookahead buffer. Need to do this to avoid losing last 5 tokens
+    if not references_in_buffer:
+        for token in lookahead_buffer:
+            yield {"type": "token", "content": token}
+
+    # Stream complete, send full response for backend processing 
+    yield {"type": "done", "full_response": full_response.strip()}
+
 
 
 def generate_response(

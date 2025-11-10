@@ -1,15 +1,17 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import time
 import os
-import re
+import json
+import asyncio
 from typing import Optional, List
 
 from app.models import Citation, SearchResult
 from app.db.database import get_db
 from app.logging_config import setup_logging, get_logger
-from app.rag.generation import generate_response
+from app.rag.generation import generate_response, generate_response_stream
 from app.retrieval import semantic_search, hybrid_retrieval
 from app.rag.conversation_manager import ConversationManager
 from app.rag.response_processing import prepare_messages_for_display, extract_and_store_citations
@@ -114,6 +116,84 @@ async def get_conversation_detail(conversation_id: str):
         citations=citations
     )
 
+@app.post("/chat/stream")
+async def send_message_stream(request: UserRequest):
+    """Streams tokens via SSE (Server Sent Events), saves message after completion"""
+
+    # Determine which model to use
+    use_local = request.use_local if request.use_local is not None else os.getenv("USE_LOCAL_LLM", default="true").lower() == "true"
+
+    logger.info(f"Received question: {request.user_message[:100]}...")
+    logger.debug(f"Using local model: {use_local}")
+
+    # Get or create conversation object
+    conversation_id = request.conversation_id
+    if not conversation_id:
+        # No ID provided
+        conversation_id = conversation_manager.create_conversation()
+    elif not conversation_manager.get_conversation(conversation_id):
+        # ID provided, need to create new conversation
+        _ = conversation_manager.create_conversation(conversation_id)
+
+    # Get conversation history for multi-turn support
+    conversation_history = conversation_manager.get_messages(conversation_id)
+
+    # Save user message immediately, optimistic
+    conversation_manager.add_message(conversation_id, "user", request.user_message)
+
+    async def event_generator():
+        generated_response = ""
+        try:
+            # Fetch top k chunks
+            retrieval_start = time.time()
+            chunks = semantic_search(request.user_message, request.top_k, request.top_n, request.use_reranker)
+            # chunks = hybrid_retrieval(request.user_message, conversation_history, request.top_k, request.top_n, request.use_reranker)
+            retrieval_time = (time.time() - retrieval_start) * 1000
+            logger.info(f"Retrieval time: {retrieval_time:.0f}ms")
+
+            yield f"data: {json.dumps({'type': 'start', 'conversation_id': conversation_id})}\n\n"
+
+            # Use 5-minute timeout
+            async with asyncio.timeout(300):
+                async for chunk in generate_response_stream(request.user_message, chunks, use_local, conversation_history):
+                    if chunk["type"] == "token":
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                    elif chunk["type"] == "done":
+                        generated_response = chunk["full_response"]
+                    elif chunk["type"] == "error":
+                        raise Exception(chunk["message"])
+            
+            # Extract and store citations from response (assigns conversation-wide numbers)
+            numbered_response_citations = extract_and_store_citations(generated_response, chunks, conversation_id, conversation_manager)
+
+            # Store messages with ORIGINAL [PMC...] format for LLM context
+            conversation_manager.add_message(
+                conversation_id,
+                "assistant",
+                generated_response,
+                cited_source_ids=[cit.source_id for cit in numbered_response_citations], 
+                cited_chunk_ids=[cit.chunk_id for cit in numbered_response_citations]
+            )
+
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        
+        except asyncio.TimeoutError:
+            # Rollback: delete the user message 
+            deleted_message = conversation_manager.delete_last_message(conversation_id)
+            logger.error(f"Removing latest message: {str(deleted_message)}")
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Generation timeout'})}\n\n"
+        
+        except Exception as e:
+            # Rollback: delete the user message 
+            deleted_message = conversation_manager.delete_last_message(conversation_id)
+            logger.error(f"Removing latest message: {str(deleted_message)}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+    
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def send_message(request: UserRequest):
     """Send a message and get an AI response with citations"""
@@ -144,18 +224,12 @@ async def send_message(request: UserRequest):
         retrieval_start = time.time()
         chunks = semantic_search(request.user_message, request.top_k, request.top_n, request.use_reranker)
         # chunks = hybrid_retrieval(request.user_message, conversation_history, request.top_k, request.top_n, request.use_reranker)
-
         retrieval_time = (time.time() - retrieval_start) * 1000
         logger.info(f"Retrieval time: {retrieval_time:.0f}ms")
 
         # Use RAG pipeline - returns RAGResponse with [PMC...] format
         generation_start = time.time()
-        generated_response = generate_response(
-            user_message=request.user_message, 
-            use_local=use_local, 
-            chunks=chunks,
-            conversation_history=conversation_history
-            )
+        generated_response = generate_response(request.user_message, chunks, use_local, conversation_history)
         generation_time_ms = (time.time() - generation_start) * 1000
 
         # Extract and store citations from response (assigns conversation-wide numbers)

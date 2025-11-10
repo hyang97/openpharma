@@ -51,150 +51,61 @@ User switches away: `'loading'/'streaming' → 'loading' → null`
 
 ### Streaming Generator (`app/rag/generation.py`)
 
-**Note:** Use standardized heading patterns from `app/rag/response_processing.py`:
-- `ANSWER_HEADING_PATTERN` - detects `## Answer` heading
-- `REFERENCES_HEADING_PATTERN` - detects `## References` heading
+**Architecture**: Two-state FSM with lookahead buffering to prevent streaming `## References` section.
 
-```python
-from app.rag.response_processing import ANSWER_HEADING_PATTERN, REFERENCES_HEADING_PATTERN
+**State Machine:**
+- **State 1 (Preamble)**: Buffer tokens until `## Answer` heading detected (or 100-token fallback)
+- **State 2 (Streaming)**: Yield tokens with 5-token lookahead to detect `## References` before streaming it
 
-async def generate_response_stream(
-    user_message: str,
-    conversation_id: str,
-    chunks: List[SearchResult],
-    conversation_history: Optional[List[dict]] = None
-):
-    """
-    Async generator that streams response tokens, filtering content between
-    ## Answer and ## References markers.
+**Key Design Decisions:**
 
-    Yields:
-        dict: {"type": "token", "content": "..."}
-        dict: {"type": "done", "full_response": "..."}
-    """
-    # Build messages (reuse existing function)
-    messages = build_messages(user_message, chunks, conversation_history)
+1. **Lookahead Buffer (5 tokens)**:
+   - `## References` is 2-3 tokens in Llama 3.1 (tested: `'##'` → `' References'` → `':'`)
+   - 5-token lookahead provides safety margin for other tokenizers (GPT-4, Claude)
+   - Trade-off: ~250ms initial latency (imperceptible) vs preventing reference section leakage
 
-    # Start Ollama streaming
-    client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
-    stream = client.chat(
-        model=OLLAMA_MODEL,
-        messages=messages,
-        stream=True,
-        options={'keep_alive': -1}
-    )
+2. **Preamble Handling**:
+   - State 1 accumulates tokens as a string until heading found
+   - Seeds lookahead buffer with content after `## Answer` (prevents streaming gap)
+   - Fallback at 100 tokens if no heading (handles non-standard LLM responses)
 
-    # State machine variables
-    buffer = ""
-    streaming_started = False
-    answer_content = ""
-    full_response = ""
-    token_count = 0
+3. **References Detection**:
+   - Search full lookahead buffer (joined string) for `REFERENCES_HEADING_PATTERN`
+   - When detected: Strip pattern, yield clean text, break (discards buffered tokens)
+   - When stream ends naturally: Flush remaining buffer (last 5 tokens)
 
-    for chunk in stream:
-        # Extract token from Ollama response
-        if not chunk.get('message', {}).get('content'):
-            continue
+4. **Pattern Reuse**:
+   - Import `ANSWER_HEADING_PATTERN` and `REFERENCES_HEADING_PATTERN` from `response_processing.py`
+   - Ensures consistency with non-streaming citation extraction
 
-        token = chunk['message']['content']
-        buffer += token
-        full_response += token
-        token_count += 1
-
-        # State 1: Waiting for ## Answer heading
-        if not streaming_started:
-            # Use standardized pattern for consistency
-            match = re.search(ANSWER_HEADING_PATTERN, buffer, re.IGNORECASE)
-            if match:
-                # Found heading, start streaming from after it
-                streaming_started = True
-                answer_content = buffer[match.end():]
-                if answer_content:
-                    yield {"type": "token", "content": answer_content}
-                buffer = ""
-            elif token_count > 100:
-                # Fallback: No heading after 100 tokens, start streaming all tokens, yield the full buffer
-                streaming_started = True
-                yield {"type": "token", "content": buffer}
-                answer_content = buffer
-                buffer = ""
-
-        # State 2: Streaming (between ## Answer and ## References)
-        else:
-            answer_content += token
-
-            # Check last 50 chars for ## References (handles multi-token headers)
-            check_window = answer_content[-50:] if len(answer_content) > 50 else answer_content
-            if re.search(REFERENCES_HEADING_PATTERN, check_window, re.IGNORECASE):
-                # Found References marker, stop streaming
-                # Strip the ## References part from accumulated content
-                answer_content = re.sub(
-                    r'\s*##\s*References.*$',
-                    '',
-                    answer_content,
-                    flags=re.IGNORECASE | re.DOTALL
-                )
-                break
-            else:
-                # Safe to stream this token
-                yield {"type": "token", "content": token}
-
-    # Stream complete, send full response for backend processing
-    yield {"type": "done", "full_response": full_response.strip()}
-```
+**Implementation**: See `app/rag/generation.py:103-192` for full generator code.
 
 ### Streaming Endpoint (`app/main.py`)
 
-```python
-import asyncio
+**Architecture**: SSE endpoint that coordinates retrieval, streaming generation, and post-processing.
 
-@app.post("/chat/stream")
-async def send_message_stream(request: UserRequest):
-    """Streams tokens via SSE, saves message after completion."""
-    conversation_id = request.conversation_id or conversation_manager.create_conversation()
-    conversation_manager.add_message(conversation_id, "user", request.user_message)
+**Event Flow:**
+1. **Setup**: Create/retrieve conversation, add user message optimistically
+2. **Retrieval**: Semantic search (same as non-streaming endpoint)
+3. **Start Event**: Send `{"type": "start", "conversation_id": "..."}` to client
+4. **Streaming**: Iterate over `generate_response_stream()`, forward token events to client
+5. **Post-processing**: Extract citations, save message with metadata
+6. **Done Event**: Send `{"type": "done"}` to signal completion
 
-    # Retrieval at endpoint level (same as /chat)
-    chunks = semantic_search(
-        request.user_message,
-        top_k=20,
-        top_n=5,
-        use_reranker=request.use_reranker
-    )
+**Error Handling:**
+- All exceptions caught in `event_generator()` → Send `{"type": "error"}` event (no HTTPException)
+- Rollback: Delete user message via `conversation_manager.delete_last_message()`
+- Timeout: 5 minutes (300s) via `asyncio.timeout()`
 
-    async def event_generator():
-        full_response = ""
-        try:
-            yield f"data: {json.dumps({'type': 'start', 'conversation_id': conversation_id})}\n\n"
+**SSE Event Types:**
+- `start` - Conversation ID for client tracking
+- `token` - Individual token/word with raw `[PMCxxxxxx]` citations
+- `done` - Stream complete, trigger frontend refetch for formatted messages
+- `error` - Generation failed, includes error message
 
-            # Add 3-minute timeout
-            async with asyncio.timeout(180):
-                async for chunk in generate_response_stream(...):
-                    if chunk["type"] == "token":
-                        yield f"data: {json.dumps(chunk)}\n\n"
-                    elif chunk["type"] == "done":
-                        full_response = chunk["full_response"]
+**Key Design Choice**: Return `StreamingResponse` (not `ChatResponse`), media type `text/event-stream`
 
-            # Extract citations and save (same as /chat endpoint)
-            citations = extract_and_store_citations(full_response, chunks, conversation_id)
-            conversation_manager.add_message(
-                conversation_id,
-                "assistant",
-                full_response,
-                cited_source_ids=[c.source_id for c in citations],
-                cited_chunk_ids=[c.chunk_id for c in citations]
-            )
-
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
-        except asyncio.TimeoutError:
-            conversation_manager.delete_last_message(conversation_id)
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Generation timeout'})}\n\n"
-        except Exception as e:
-            conversation_manager.delete_last_message(conversation_id)
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
-```
+**Implementation**: See `app/main.py:119-190` for full endpoint code.
 
 ## Frontend Implementation
 
