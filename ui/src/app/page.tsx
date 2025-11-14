@@ -10,10 +10,12 @@ import { useChat } from "@/hooks/useChat"
 
 export default function Chat() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-  const chat = useChat(API_URL)
-
+  
   // UI state
   const [isSidebarOpen, setIsSidebarOpen] = useState(false) // State: sidebar open/closed on mobile
+
+  // Chat hook
+  const chat = useChat(API_URL, true)
 
   const handleReturnHome = () => {
     chat.returnHome()
@@ -96,7 +98,13 @@ export default function Chat() {
 
             <div className="flex-1 overflow-y-auto">
               <div className="max-w-4xl mx-auto px-4 sm:px-6">
-                <MessageList messages={chat.messages} isLoading={chat.isLoading(chat.currConversationId)} isFetching={chat.isFetchingConversation}/>
+                <MessageList 
+                  messages={chat.messages} 
+                  isLoading={chat.isLoading(chat.currConversationId)} 
+                  isFetching={chat.isFetchingConversation}
+                  isStreaming={chat.isStreaming(chat.currConversationId)}
+                  isUpdatingCitations={chat.isUpdatingCitations(chat.currConversationId)}
+                />
                 <CitationList citations={chat.currCitations} />
               </div>
             </div>

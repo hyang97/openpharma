@@ -6,6 +6,7 @@ import time
 import os
 import json
 import asyncio
+import logging
 from typing import Optional, List
 
 from app.models import Citation, SearchResult
@@ -25,6 +26,14 @@ setup_logging(
     log_file="logs/openpharma.log"
 )
 logger = get_logger(__name__)
+
+# Configure metrics logger to separate file
+metrics_logger = get_logger("metrics")
+metrics_handler = logging.FileHandler("logs/streaming_metrics.log")
+metrics_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+metrics_logger.addHandler(metrics_handler)
+metrics_logger.setLevel(logging.INFO)
+metrics_logger.propagate = False  # Don't send to root logger
 
 app = FastAPI(title="OpenPharma API", version="0.1.0")
 
@@ -158,7 +167,7 @@ async def send_message_stream(request: UserRequest):
                 async for chunk in generate_response_stream(request.user_message, chunks, use_local, conversation_history):
                     if chunk["type"] == "token":
                         yield f"data: {json.dumps(chunk)}\n\n"
-                    elif chunk["type"] == "done":
+                    elif chunk["type"] == "end_of_response":
                         generated_response = chunk["full_response"]
                     elif chunk["type"] == "error":
                         raise Exception(chunk["message"])
@@ -175,7 +184,7 @@ async def send_message_stream(request: UserRequest):
                 cited_chunk_ids=[cit.chunk_id for cit in numbered_response_citations]
             )
 
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
         
         except asyncio.TimeoutError:
             # Rollback: delete the user message 
@@ -273,6 +282,31 @@ async def send_message(request: UserRequest):
         logger.error(f"Error generating response: {str(e)}", exc_info=True)
         logger.error(f"Removing latest message: {str(deleted_message)}")
         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
+
+class StreamingMetricsRequest(BaseModel):
+    conversation_id: str
+    time_to_first_token: int  # milliseconds
+    total_tokens: int
+    avg_time_per_token: float  # milliseconds
+    total_stream_time: int  # milliseconds
+    tokens_per_second: float
+
+@app.post("/metrics/streaming")
+async def log_streaming_metrics(request: StreamingMetricsRequest):
+    """Log streaming performance metrics to separate metrics file"""
+    try:
+        metrics_logger.info(
+            f"conversation_id={request.conversation_id} "
+            f"time_to_first_token={request.time_to_first_token}ms "
+            f"total_tokens={request.total_tokens} "
+            f"avg_time_per_token={request.avg_time_per_token:.1f}ms "
+            f"total_stream_time={request.total_stream_time}ms "
+            f"tokens_per_second={request.tokens_per_second:.1f}"
+        )
+        return {"status": "logged"}
+    except Exception as e:
+        logger.error(f"Error logging streaming metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error logging metrics: {str(e)}")
 
 @app.get("/")
 async def root():

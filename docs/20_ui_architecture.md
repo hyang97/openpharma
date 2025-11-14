@@ -2,13 +2,14 @@
 
 ## Overview
 
-Next.js 15 + React + TypeScript single-page application with real-time conversational RAG interface.
+Next.js 15 + React + TypeScript single-page application with real-time conversational RAG interface supporting both standard and streaming responses.
 
 **Tech Stack:**
 - Next.js 15 (App Router)
 - React 18 (Client Components)
 - TypeScript
 - Tailwind CSS
+- Server-Sent Events (SSE) for streaming
 - No state management libraries (React built-in state)
 
 ---
@@ -58,10 +59,13 @@ allConversationSumm: ConversationSummary[]  // Sidebar conversation list
 
 **Loading State:**
 ```typescript
-loadingConversations: Map<string, 'loading' | 'error'>  // Per-conversation status
+loadingConversations: Map<string, 'loading' | 'streaming' | 'updating_citations' | 'send_error' | 'resume_error'>
 isFetchingConversation: boolean            // Fetching conversation data (separate from generation)
-isLoading: boolean (derived)               // Current conversation generating
-hasError: boolean (derived)                // Current conversation has error
+isLoading: boolean (derived)               // Current conversation in loading state
+isStreaming: boolean (derived)             // Current conversation actively streaming
+isUpdatingCitations: boolean (derived)     // Current conversation formatting citations
+hasSendError: boolean (derived)            // Current conversation send failed
+hasResumeError: boolean (derived)          // Current conversation resume failed
 ```
 
 **Cache State:**
@@ -216,7 +220,37 @@ currentConversationRef.current = id
 - Virtualized message list for long conversations
 - Infinite scroll for conversation list
 - React Query for advanced caching
-- Streaming responses from LLM
+
+---
+
+## Streaming Architecture
+
+### Overview
+SSE (Server-Sent Events) streaming for progressive token display during LLM generation.
+
+**State Flow:**
+```
+User sends message → 'loading' → First token arrives → 'streaming' →
+Stream completes → 'updating_citations' → Refetch done → null (complete)
+```
+
+**Implementation:**
+- Frontend: `streamResponse()` in useChat.ts parses SSE stream
+- Backend: `/chat/stream` endpoint yields tokens as `data: {json}\n\n`
+- Empty assistant message added to display during streaming, filtered from render until content arrives
+
+### Streaming Features
+1. **Progressive display** - Tokens appear as generated
+2. **Blinking cursor** - Visual indicator during active streaming
+3. **Dimmed PMC citations** - Raw `[PMCxxxxxx]` shown during streaming, become clickable `[1]` after refetch
+4. **No auto-scroll during streaming** - User can freely scroll to read citations
+5. **Background streaming** - Stream continues if user switches conversations, resumes if switched back
+6. **Performance metrics** - Time to first token, tokens/sec logged to `logs/streaming_metrics.log`
+
+### Error Handling
+- **Timeout**: 2-minute inactivity → rollback user message + empty assistant message, restore input
+- **Network error**: Same rollback flow
+- **User switches away**: Sets state to 'loading', continues silently, no UI updates
 
 ---
 
