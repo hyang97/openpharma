@@ -2,13 +2,30 @@ import { Message } from '@/types/message'
 
 type MessageBubbleProps = {
   message: Message
+  isStreaming?: boolean
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, isStreaming = false }: MessageBubbleProps) {
   const isUser = message.role === 'user'
 
   // Parse inline citations and make them clickable
   const renderContentWithCitations = (content: string) => {
+
+    // First, handle raw PMC citations (during streaming)
+    const pmcPattern = /(\[PMC\d+\])/g
+    const hasPmcCitations = pmcPattern.test(content)
+
+    if (hasPmcCitations) {
+      // During streaming: render PMC IDs with reduced opacity
+      return content.split(pmcPattern).map((part, i) => {
+        if (pmcPattern.test(part)) {
+          return <span key={i} className="opacity-50 text-slate-400">{part}</span>
+        }
+        return part
+      })
+    }
+
+    // After refetch: render numbered citations as clickable (existing logic)
     // Regex to match citation patterns: [1], [2, 3], [1,2], etc.
     const citationPattern = /\[(\d+(?:\s*,\s*\d+)*)\]/g
     const parts: (string | React.ReactNode)[] = []
@@ -86,6 +103,10 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           </div>
           <div className="text-base leading-relaxed whitespace-pre-wrap text-slate-100">
             {renderContentWithCitations(message.content)}
+            {/* Blinking cursor during streaming */}
+            {isStreaming && (
+              <span className="inline-block w-2 h-5 bg-accent ml-1 animate-pulse" />
+            )}
           </div>
         </div>
       )}

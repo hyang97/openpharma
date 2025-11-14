@@ -215,8 +215,52 @@ Manages conversation state, messages, and conversation-wide citation numbering.
 - Users can reference citations from previous turns
 - Simpler mental model for multi-turn conversations
 
-## Usage Example
+## Streaming Responses (Phase 1 - Complete)
 
+### Overview
+SSE (Server-Sent Events) streaming for progressive token display during LLM generation.
+
+**Endpoints:**
+- `/chat/stream` - Streaming endpoint (SSE)
+- `/chat` - Standard endpoint (non-streaming)
+
+### Streaming Generator (`app/rag/generation.py:103-202`)
+
+**Function:** `generate_response_stream(user_message, chunks, use_local, conversation_history)`
+
+**Implementation:**
+- Async generator that yields token dictionaries: `{"type": "token", "content": "..."}` or `{"type": "complete"}`
+- Two-state FSM with lookahead buffering:
+  1. **Preamble state**: Buffer until `## Answer` heading found (waits 3 tokens after match to capture `:` and `\n`)
+  2. **Streaming state**: Yield tokens with 5-token lookahead to detect `## References` and stop
+- Fallback: start streaming after 100 tokens if no heading found
+
+**Backend Endpoint** (`app/main.py:119-190`):
+```python
+@app.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    # 1. Retrieval (same as standard endpoint)
+    chunks = semantic_search(...)
+
+    # 2. Stream generator
+    async def event_generator():
+        yield f'data: {json.dumps({"type": "start"})}\n\n'
+
+        async for event in generate_response_stream(...):
+            if event["type"] == "token":
+                yield f'data: {json.dumps(event)}\n\n'
+            elif event["type"] == "end_of_response":
+                # Post-process, extract citations, save to conversation
+                yield f'data: {json.dumps({"type": "complete"})}\n\n'
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+```
+
+**See `docs/24_streaming_responses.md` for complete streaming architecture.**
+
+## Usage Examples
+
+**Standard (Non-Streaming):**
 ```python
 from app.rag.generation import generate_response
 from app.retrieval import semantic_search
@@ -241,6 +285,19 @@ citations = extract_and_store_citations(
     conversation_manager=manager
 )
 # Returns: [Citation(number=1, source_id="12345", title="...", ...)]
+```
+
+**Streaming:**
+```python
+from app.rag.generation import generate_response_stream
+
+# Async generator yields tokens
+async for event in generate_response_stream(user_message, chunks, True, history):
+    if event["type"] == "token":
+        print(event["content"], end="", flush=True)
+    elif event["type"] == "end_of_response":
+        full_response = event["full_response"]
+        # Post-process and extract citations from full_response
 ```
 
 ## 3. Multi-Turn Conversations (Phase 1 - In Progress)

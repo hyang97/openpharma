@@ -111,7 +111,7 @@ async def generate_response_stream(
     
     Yields:
         dict: {"type": "token", "content": "..."}
-        dict: {"type": "done", "full_response": "..."}
+        dict: {"type": "end_of_response", "full_response": "..."}
     """
     if not use_local:
         # TODO: Add OpenAI integration later
@@ -153,12 +153,14 @@ async def generate_response_stream(
         if not streaming_started:
             match = re.search(ANSWER_HEADING_PATTERN, preamble_buffer, re.IGNORECASE)
 
-            if match: 
-                # Found ## Answer, start streaming all tokens after it
-                streaming_started = True 
-                answer_content = preamble_buffer[match.end():]
-                if answer_content:
-                    lookahead_buffer.append(answer_content)
+            if match:
+                # Found ## Answer, wait for 3 more tokens after match to capture colon/newline
+                tokens_after_match = len(preamble_buffer) - match.end()
+                if tokens_after_match >= 3:
+                    streaming_started = True
+                    answer_content = preamble_buffer[match.end():].lstrip(': \n')  # Strip leading colon, space, newline
+                    if answer_content:
+                        lookahead_buffer.append(answer_content)
 
             elif token_count > 100:
                 # No header found, but it's been 100 tokens, yield full preamble and start streaming anyway
@@ -199,7 +201,7 @@ async def generate_response_stream(
             yield {"type": "token", "content": token}
 
     # Stream complete, send full response for backend processing 
-    yield {"type": "done", "full_response": full_response.strip()}
+    yield {"type": "end_of_response", "full_response": full_response.strip()}
 
 
 

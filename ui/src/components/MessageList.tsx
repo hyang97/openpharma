@@ -6,15 +6,20 @@ type MessageListProps = {
   messages: Message[]
   isLoading: boolean
   isFetching: boolean
+  isStreaming: boolean
+  isUpdatingCitations: boolean
 }
 
-export function MessageList({ messages, isLoading, isFetching }: MessageListProps) {
+export function MessageList({ messages, isLoading, isFetching, isStreaming, isUpdatingCitations }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom when messages change or loading state changes
+  // Don't auto-scroll during streaming to allow user to scroll freely
   useEffect(() => {
+    if (isStreaming) return
+
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isLoading])
+  }, [messages, isLoading, isStreaming])
 
   return (
     <div className="space-y-6 p-6 scroll-mt-20 md:scroll-mt-0">
@@ -54,9 +59,15 @@ export function MessageList({ messages, isLoading, isFetching }: MessageListProp
       )}
 
       {/* Actual messages */}
-      {messages.map((msg, index) => (
-        <MessageBubble key={index} message={msg} />
-      ))}
+      {messages.map((msg, index) => {
+        // Skip empty assistant messages (used as placeholder during streaming)
+        if (msg.role === 'assistant' && msg.content.trim() === '') {
+          return null
+        }
+        const isLastMessage = index === messages.length - 1
+        const isLastAssistant = isLastMessage && msg.role === 'assistant'
+        return <MessageBubble key={index} message={msg} isStreaming={isLastAssistant && isStreaming} />
+      })}
 
       {/* Loading indicator for LLM generation */}
       {isLoading && (
@@ -76,6 +87,21 @@ export function MessageList({ messages, isLoading, isFetching }: MessageListProp
           </div>
         </div>
       )}
+
+      {/* Updating citations indicator */}
+      {isUpdatingCitations && (
+        <div className="flex justify-start mt-4">
+          <div className="text-xs text-slate-400 flex items-center gap-2">
+            <div className="flex gap-1">
+              <span className="animate-bounce" style={{ animationDelay: '0ms' }}>●</span>
+              <span className="animate-bounce" style={{ animationDelay: '150ms' }}>●</span>
+              <span className="animate-bounce" style={{ animationDelay: '300ms' }}>●</span>
+            </div>
+            <span>Formatting citations...</span>
+          </div>
+        </div>
+      )}
+
 
       {/* Invisible div at bottom for auto-scroll */}
       <div ref={messagesEndRef} />
