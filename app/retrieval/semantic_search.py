@@ -27,8 +27,7 @@ def semantic_search(
     top_k: int = 10,
     top_n: int = 5,
     use_reranker: bool = False,
-    expand_chunks: bool = False,
-    additional_chunks_per_doc: int = 5
+    additional_chunks_per_doc: int = 0
 ) -> List[SearchResult]:
     """
     Perform semantic search over document chunks.
@@ -38,20 +37,19 @@ def semantic_search(
         top_k: Number of top results from vector search (default: 10)
         top_n: Number of final results to return (default: 5)
         use_reranker: Whether to use cross-encoder re-ranking (default: False)
-        expand_chunks: When True and using re-ranker, fetch additional chunks from
-            retrieved documents to give re-ranker more options (default: False)
-        additional_chunks_per_doc: Number of additional chunks to fetch per document
-            when expand_chunks=True (default: 5)
+        additional_chunks_per_doc: When using re-ranker, fetch this many additional
+            chunks per document to give re-ranker more options. Set to 0 to disable
+            chunk expansion (default: 0)
 
     Returns:
         List of SearchResult objects ordered by similarity (or re-ranker score if enabled)
 
     Example:
-        >>> # Basic re-ranking
+        >>> # Basic re-ranking (no chunk expansion)
         >>> results = semantic_search("What are GLP-1 agonists used for?", top_k=10, use_reranker=True)
         >>>
         >>> # Re-ranking with chunk expansion to reduce title bias
-        >>> results = semantic_search("What are GLP-1 agonists used for?", top_k=10, use_reranker=True, expand_chunks=True)
+        >>> results = semantic_search("What are GLP-1 agonists used for?", top_k=10, use_reranker=True, additional_chunks_per_doc=5)
     """
     global _embedding_service
 
@@ -124,7 +122,7 @@ limit :top_k
         logger.info(f"  Using reranker model: {reranker.model_name}")
 
         # Optionally expand chunks before re-ranking
-        if expand_chunks:
+        if additional_chunks_per_doc > 0:
             # Fetch additional chunks from the same documents to give re-ranker more options
             # This helps when initial retrieval found papers based on title matching,
             # but the actual relevant content is in different chunks
@@ -297,8 +295,7 @@ def hybrid_retrieval(
         top_n = 5,
         max_historical_chunks = 15,
         use_reranker = False,
-        expand_chunks: bool = False,
-        additional_chunks_per_doc: int = 5
+        additional_chunks_per_doc: int = 0
 ) -> List[SearchResult]:
     """
     Hybrid retrieval, semantic search + most recent historical chunks
@@ -310,15 +307,15 @@ def hybrid_retrieval(
         top_n: Number of final results to return
         max_historical_chunks: Maximum historical chunks to include
         use_reranker: Whether to use cross-encoder re-ranking
-        expand_chunks: Whether to expand chunks before re-ranking (requires use_reranker=True)
-        additional_chunks_per_doc: Number of additional chunks per document when expanding
+        additional_chunks_per_doc: When using re-ranker, fetch this many additional
+            chunks per document. Set to 0 to disable chunk expansion (default: 0)
 
     Returns:
         List of SearchResult objects
     """
 
     hybrid_start = time.time()
-    new_chunks = semantic_search(query, top_k, top_n, use_reranker, expand_chunks, additional_chunks_per_doc)
+    new_chunks = semantic_search(query, top_k, top_n, use_reranker, additional_chunks_per_doc)
     
     recent_chunk_ids = []
     seen_chunk_ids = set(chunk.chunk_id for chunk in new_chunks) 

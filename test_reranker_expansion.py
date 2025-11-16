@@ -51,7 +51,7 @@ def test_reranker_expansion():
         top_k=10,
         top_n=5,
         use_reranker=True,
-        expand_chunks=False
+        additional_chunks_per_doc=0  # 0 means no expansion
     )
 
     print(f"\nFound {len(results_rerank_only)} results:\n")
@@ -73,8 +73,7 @@ def test_reranker_expansion():
         top_k=10,
         top_n=5,
         use_reranker=True,
-        expand_chunks=True,
-        additional_chunks_per_doc=5
+        additional_chunks_per_doc=5  # >0 means expand with 5 chunks per doc
     )
 
     print(f"\nFound {len(results_with_expansion)} results:\n")
