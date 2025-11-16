@@ -1,12 +1,14 @@
 # PMC Collection Tracker
 
-Last updated: 2025-11-02
+Last updated: 2025-11-16
 
 ## Summary
 
-## Total: 2,683,259 papers discovered
-## Fetched: 110,716 papers total (52,014 diabetes + 58,705 historical 95th percentile)
-## Active (RAG): 65,565 papers (priority > 0)
+## Total: 2,683,453 papers discovered
+## Fetched: 110,912 papers total (52,014 diabetes + 58,705 historical 95th percentile + 194 PubMedQA eval + 1 failed)
+## Fully Processed: 110,912 papers (fetched, chunked, embedded)
+## Total Chunks: 4,745,881 (all embedded)
+## Active (RAG): 65,759 papers (priority > 0, includes 194 PubMedQA)
 ## Excluded: 45,151 papers (priority = 0, non-research)
 ## Baseline 5-year open access: 4,386,906 papers (not loaded)
 ## Filtered baseline: 869,593 papers (not loaded)
@@ -40,6 +42,21 @@ Last updated: 2025-11-02
 - **Status**: `fetched` (3 failed)
 - **Notes**: Filtered historical papers by citation impact using NIH iCite data. Excludes diabetes research papers already fetched in collection #1. 58,702 successfully fetched and embedded, 3 fetch failures.
 
+### 4. PubMedQA Evaluation Dataset (1989-2017)
+- **Date**: 2025-11-16
+- **Source**: PubMedQA expert-labeled dataset (ori_pqal.json)
+- **Papers Total**: 1,000 PMIDs
+- **Papers with PMC IDs**: 194 (all successfully ingested)
+- **Papers without PMC IDs**: 806 (abstract-only, not available in PMC)
+- **Status**: `fetched` (all 194 successfully processed)
+- **Purpose**: Evaluation dataset with expert-labeled ground truth questions and answers
+- **Notes**: Broad biomedical coverage (cardiology, oncology, surgery, neurology, infectious disease, pediatrics, etc.). ~60% pharma-relevant (drug efficacy, clinical trials, safety). No iCite percentile data available for these papers. Added for evaluation purposes despite not meeting 95th percentile citation criteria. Only 19% of PubMedQA papers are available in PMC open access; remainder are PMID-only without full text.
+- **Data Files**:
+  - Original dataset: `data/ori_pqal.json` (1,000 questions)
+  - PMC ID list: `data/pubmedqa_pmc_ids.txt` (194 PMC IDs)
+  - PMID→PMC mapping: `data/pubmedqa_pmid_to_pmc_mapping.json`
+  - Golden eval set: `data/golden_eval_set.csv` (194 questions with ground truth)
+
 ## 4. Exclude Non-Research Articles from Collection #1 (Retroactive)
 
 **Date**: 2025-11-02
@@ -57,20 +74,22 @@ open access[filter] AND
 ```
 
 **Papers Excluded**: 45,151 (reviews, editorials, letters, comments, errata)
-**Papers Retained**: 65,565 research articles (diabetes + historical)
+**Papers Retained**: 65,759 research articles (diabetes + historical + PubMedQA)
 
-### Priority Distribution (110,716 fetched papers)
+### Priority Distribution (110,912 fetched papers)
 
 | Priority | Count | Description |
 |----------|-------|-------------|
-| 50 | 65,565 | Research articles (searchable in RAG) |
+| 50 | 65,759 | Research articles (searchable in RAG) |
 | 0 | 45,151 | Non-research articles (excluded from RAG) |
+| Failed | 2 | Fetch failures |
 
-**Effective Collection**: 65,565 papers (59% of fetched)
+**Effective Collection**: 65,759 papers (59% of fetched)
 - ~7K diabetes research articles (2020-2025)
 - ~58K historical high-impact papers (1990-2019, 95th percentile citations)
+- 194 PubMedQA evaluation papers (1989-2017, expert-labeled ground truth)
 
-**Impact**: RAG searches only ~1.5M chunks from research articles (priority > 0), ignoring ~1M chunks from non-research content.
+**Impact**: RAG searches ~4.7M chunks from research articles (priority > 0), excluding non-research content.
 
 ---
 
