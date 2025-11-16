@@ -27,6 +27,7 @@ def semantic_search(
     top_k: int = 10,
     top_n: int = 5,
     use_reranker: bool = False,
+    expand_chunks: bool = False,
     additional_chunks_per_doc: int = 5
 ) -> List[SearchResult]:
     """
@@ -37,16 +38,20 @@ def semantic_search(
         top_k: Number of top results from vector search (default: 10)
         top_n: Number of final results to return (default: 5)
         use_reranker: Whether to use cross-encoder re-ranking (default: False)
-        additional_chunks_per_doc: When using re-ranker, fetch this many additional
-            chunks from each retrieved document to give re-ranker more options (default: 5)
+        expand_chunks: When True and using re-ranker, fetch additional chunks from
+            retrieved documents to give re-ranker more options (default: False)
+        additional_chunks_per_doc: Number of additional chunks to fetch per document
+            when expand_chunks=True (default: 5)
 
     Returns:
         List of SearchResult objects ordered by similarity (or re-ranker score if enabled)
 
     Example:
+        >>> # Basic re-ranking
         >>> results = semantic_search("What are GLP-1 agonists used for?", top_k=10, use_reranker=True)
-        >>> for result in results:
-        ...     print(f"{result.title} (similarity: {result.similarity_score:.3f})")
+        >>>
+        >>> # Re-ranking with chunk expansion to reduce title bias
+        >>> results = semantic_search("What are GLP-1 agonists used for?", top_k=10, use_reranker=True, expand_chunks=True)
     """
     global _embedding_service
 
@@ -118,25 +123,30 @@ limit :top_k
         reranker = get_reranker()
         logger.info(f"  Using reranker model: {reranker.model_name}")
 
-        # Fetch additional chunks from the same documents to give re-ranker more options
-        # This helps when initial retrieval found papers based on title matching,
-        # but the actual relevant content is in different chunks
-        expand_start = time.time()
-        document_ids = list(set(result.document_id for result in search_results))
-        initial_chunk_ids = [result.chunk_id for result in search_results]
+        # Optionally expand chunks before re-ranking
+        if expand_chunks:
+            # Fetch additional chunks from the same documents to give re-ranker more options
+            # This helps when initial retrieval found papers based on title matching,
+            # but the actual relevant content is in different chunks
+            expand_start = time.time()
+            document_ids = list(set(result.document_id for result in search_results))
+            initial_chunk_ids = [result.chunk_id for result in search_results]
 
-        additional_chunks = fetch_additional_chunks_from_documents(
-            document_ids=document_ids,
-            exclude_chunk_ids=initial_chunk_ids,
-            chunks_per_document=additional_chunks_per_doc
-        )
+            additional_chunks = fetch_additional_chunks_from_documents(
+                document_ids=document_ids,
+                exclude_chunk_ids=initial_chunk_ids,
+                chunks_per_document=additional_chunks_per_doc
+            )
 
-        expand_time = (time.time() - expand_start) * 1000
-        logger.info(f"  Expanded to {len(additional_chunks)} additional chunks from {len(document_ids)} documents ({expand_time:.0f}ms)")
+            expand_time = (time.time() - expand_start) * 1000
+            logger.info(f"  Expanded to {len(additional_chunks)} additional chunks from {len(document_ids)} documents ({expand_time:.0f}ms)")
 
-        # Combine initial results with additional chunks for re-ranking
-        all_chunks = search_results + additional_chunks
-        logger.info(f"  Re-ranking {len(all_chunks)} total chunks ({len(search_results)} initial + {len(additional_chunks)} additional)")
+            # Combine initial results with additional chunks for re-ranking
+            all_chunks = search_results + additional_chunks
+            logger.info(f"  Re-ranking {len(all_chunks)} total chunks ({len(search_results)} initial + {len(additional_chunks)} additional)")
+        else:
+            # Re-rank only the initial search results
+            all_chunks = search_results
 
         top_n_search_results = rerank_chunks(query, all_chunks, top_n)
     else:
@@ -287,12 +297,28 @@ def hybrid_retrieval(
         top_n = 5,
         max_historical_chunks = 15,
         use_reranker = False,
+        expand_chunks: bool = False,
         additional_chunks_per_doc: int = 5
 ) -> List[SearchResult]:
-    """Hybrid retrieval, semantic search + most recent historical chunks"""
+    """
+    Hybrid retrieval, semantic search + most recent historical chunks
+
+    Args:
+        query: Natural language query string
+        conversation_history: List of previous conversation turns
+        top_k: Number of top results from vector search
+        top_n: Number of final results to return
+        max_historical_chunks: Maximum historical chunks to include
+        use_reranker: Whether to use cross-encoder re-ranking
+        expand_chunks: Whether to expand chunks before re-ranking (requires use_reranker=True)
+        additional_chunks_per_doc: Number of additional chunks per document when expanding
+
+    Returns:
+        List of SearchResult objects
+    """
 
     hybrid_start = time.time()
-    new_chunks = semantic_search(query, top_k, top_n, use_reranker, additional_chunks_per_doc)
+    new_chunks = semantic_search(query, top_k, top_n, use_reranker, expand_chunks, additional_chunks_per_doc)
     
     recent_chunk_ids = []
     seen_chunk_ids = set(chunk.chunk_id for chunk in new_chunks) 

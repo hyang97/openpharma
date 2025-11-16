@@ -42,20 +42,43 @@ def test_reranker_expansion():
         print(f"   Content preview: {result.content[:150]}...")
         print()
 
-    # Test WITH re-ranker and chunk expansion
+    # Test WITH re-ranker only (no chunk expansion)
     print("-" * 80)
-    print("2. WITH re-ranker and chunk expansion (5 additional chunks per doc):")
+    print("2. WITH re-ranker (no chunk expansion):")
     print("-" * 80)
-    results_with_rerank = semantic_search(
+    results_rerank_only = semantic_search(
         query=query,
         top_k=10,
         top_n=5,
         use_reranker=True,
+        expand_chunks=False
+    )
+
+    print(f"\nFound {len(results_rerank_only)} results:\n")
+    for i, result in enumerate(results_rerank_only, 1):
+        print(f"{i}. {result.title}")
+        print(f"   Document ID: {result.document_id}")
+        print(f"   Chunk ID: {result.chunk_id}")
+        print(f"   Section: {result.section}")
+        print(f"   Similarity: {result.similarity_score:.4f}" if result.similarity_score else "   Similarity: N/A")
+        print(f"   Content preview: {result.content[:150]}...")
+        print()
+
+    # Test WITH re-ranker and chunk expansion
+    print("-" * 80)
+    print("3. WITH re-ranker AND chunk expansion (5 additional chunks per doc):")
+    print("-" * 80)
+    results_with_expansion = semantic_search(
+        query=query,
+        top_k=10,
+        top_n=5,
+        use_reranker=True,
+        expand_chunks=True,
         additional_chunks_per_doc=5
     )
 
-    print(f"\nFound {len(results_with_rerank)} results:\n")
-    for i, result in enumerate(results_with_rerank, 1):
+    print(f"\nFound {len(results_with_expansion)} results:\n")
+    for i, result in enumerate(results_with_expansion, 1):
         print(f"{i}. {result.title}")
         print(f"   Document ID: {result.document_id}")
         print(f"   Chunk ID: {result.chunk_id}")
@@ -71,26 +94,35 @@ def test_reranker_expansion():
 
     # Check if chunk IDs changed
     no_rerank_ids = set(r.chunk_id for r in results_no_rerank)
-    with_rerank_ids = set(r.chunk_id for r in results_with_rerank)
+    rerank_only_ids = set(r.chunk_id for r in results_rerank_only)
+    with_expansion_ids = set(r.chunk_id for r in results_with_expansion)
 
-    different_chunks = no_rerank_ids.symmetric_difference(with_rerank_ids)
+    print(f"\nChunks in baseline (no reranker): {no_rerank_ids}")
+    print(f"Chunks with reranker only: {rerank_only_ids}")
+    print(f"Chunks with reranker + expansion: {with_expansion_ids}")
 
-    print(f"\nChunks in baseline: {no_rerank_ids}")
-    print(f"Chunks with re-ranker: {with_rerank_ids}")
-    print(f"\nNumber of different chunks: {len(different_chunks)}")
+    diff_rerank_only = no_rerank_ids.symmetric_difference(rerank_only_ids)
+    diff_expansion = rerank_only_ids.symmetric_difference(with_expansion_ids)
 
-    if different_chunks:
-        print("✓ Re-ranker successfully selected different chunks!")
-        print(f"  Changed chunk IDs: {different_chunks}")
+    print(f"\nDifference (baseline vs reranker-only): {len(diff_rerank_only)} chunks")
+    if diff_rerank_only:
+        print(f"  Changed chunk IDs: {diff_rerank_only}")
+
+    print(f"\nDifference (reranker-only vs reranker+expansion): {len(diff_expansion)} chunks")
+    if diff_expansion:
+        print("  ✓ Chunk expansion successfully found different chunks!")
+        print(f"  Changed chunk IDs: {diff_expansion}")
     else:
-        print("⚠ Re-ranker selected the same chunks (might be optimal, or query needs adjustment)")
+        print("  ⚠ No difference (might be optimal, or query needs adjustment)")
 
     # Check document diversity
     no_rerank_docs = set(r.document_id for r in results_no_rerank)
-    with_rerank_docs = set(r.document_id for r in results_with_rerank)
+    rerank_only_docs = set(r.document_id for r in results_rerank_only)
+    with_expansion_docs = set(r.document_id for r in results_with_expansion)
 
     print(f"\nUnique documents in baseline: {len(no_rerank_docs)}")
-    print(f"Unique documents with re-ranker: {len(with_rerank_docs)}")
+    print(f"Unique documents with re-ranker only: {len(rerank_only_docs)}")
+    print(f"Unique documents with re-ranker + expansion: {len(with_expansion_docs)}")
 
     print("\n" + "=" * 80)
     print("Test complete!")
