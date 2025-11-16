@@ -96,6 +96,40 @@ Re-running same search skips PMC IDs already in table (ON CONFLICT DO NOTHING)
 
 ---
 
+## Stage 1 Alt: Direct PMC ID Insertion
+
+### Script
+```bash
+python scripts/stage_1_alt_insert_pmc_ids.py --input data/pubmedqa_pmc_ids.txt
+```
+
+### What it does
+1. Reads a list of PMC IDs from a text file (one per line, no PMC prefix)
+2. Inserts them directly into `pubmed_papers` table with `fetch_status='pending'`
+3. Uses `INSERT ... ON CONFLICT DO NOTHING` to skip duplicates
+
+### Purpose
+- Insert curated lists of papers without searching PubMed
+- Useful for evaluation datasets (e.g., PubMedQA papers)
+- Avoids search API calls when exact PMC IDs are known
+
+### Example Use Case
+```bash
+# Insert PubMedQA evaluation dataset (194 papers)
+python scripts/stage_1_alt_insert_pmc_ids.py --input data/pubmedqa_pmc_ids.txt
+# → 194 PMC IDs inserted with fetch_status='pending'
+
+# Continue with normal pipeline
+python scripts/stage_2_fetch_papers.py --limit 200
+python scripts/stage_3_chunk_papers.py --limit 200
+python scripts/stage_4_embed_chunks.py --limit 5000 --workers 1
+```
+
+### Output
+- Rows in `pubmed_papers` table with `fetch_status='pending'`
+
+---
+
 ## Stage 1.1: Backfill PMIDs (Optional)
 
 ### Script
