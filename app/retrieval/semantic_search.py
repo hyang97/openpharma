@@ -22,21 +22,25 @@ logger = get_logger(__name__)
 _embedding_service = None
 
 
-def semantic_search(query: str, top_k: int = 10, top_n: int = 5, use_reranker: bool = False) -> List[SearchResult]:
+def semantic_search(
+    query: str,
+    top_k: int = 10,
+    top_n: int = 5,
+    use_reranker: bool = False,
+    additional_chunks_per_doc: int = 0
+) -> List[SearchResult]:
     """
-    Perform semantic search over document chunks.
+    Semantic search over document chunks with optional re-ranking.
 
     Args:
-        query: Natural language query string
-        top_k: Number of top results to return (default: 10)
+        query: Search query
+        top_k: Initial retrieval size (default: 10)
+        top_n: Final results to return (default: 5)
+        use_reranker: Whether to use cross-encoder re-ranking (default: False)
+        additional_chunks_per_doc: Extra chunks per doc for re-ranking, 0 to disable (default: 0)
 
     Returns:
-        List of SearchResult objects ordered by similarity (highest first)
-
-    Example:
-        >>> results = semantic_search("What are GLP-1 agonists used for?", top_k=5)
-        >>> for result in results:
-        ...     print(f"{result.title} (similarity: {result.similarity_score:.3f})")
+        List of SearchResult objects
     """
     global _embedding_service
 
@@ -87,14 +91,14 @@ limit :top_k
     for chunk in result_chunks:
         metadata = chunk.doc_metadata or {} # handles None metadata case
         result = SearchResult(
-            chunk_id= chunk.document_chunk_id, 
-            section= chunk.section, 
-            content= chunk.content, 
+            chunk_id= chunk.document_chunk_id,
+            section= chunk.section,
+            content= chunk.content,
             query= query,
-            similarity_score= chunk.similarity_score, 
+            similarity_score= chunk.similarity_score,
             document_id= chunk.document_id,
-            source_id= chunk.source_id, 
-            title= chunk.title, 
+            source_id= chunk.source_id,
+            title= chunk.title,
             authors= metadata.get("authors", []),
             publication_date= metadata.get("pub_date", ""),
             journal= metadata.get("journal", ""),
@@ -102,23 +106,42 @@ limit :top_k
         )
         search_results.append(result)
 
-    # Return top n search result, reranking if use_reranker is set
+    # Optionally re-rank results
     if use_reranker:
         from app.retrieval.reranker import get_reranker
         reranker = get_reranker()
         logger.info(f"  Using reranker model: {reranker.model_name}")
-        top_n_search_results = rerank_chunks(query, search_results, top_n)
-    else:
-        top_n_search_results = search_results[:top_n]
 
-    return top_n_search_results
+        # Optionally expand chunks before re-ranking
+        if additional_chunks_per_doc > 0:
+            expand_start = time.time()
+            document_ids = list(set(result.document_id for result in search_results))
+            initial_chunk_ids = [result.chunk_id for result in search_results]
+
+            additional_chunks = fetch_additional_chunks_from_documents(
+                document_ids=document_ids,
+                exclude_chunk_ids=initial_chunk_ids,
+                chunks_per_document=additional_chunks_per_doc
+            )
+
+            expand_time = (time.time() - expand_start) * 1000
+            logger.info(f"  Expanded to {len(additional_chunks)} additional chunks from {len(document_ids)} documents ({expand_time:.0f}ms)")
+
+            all_chunks = search_results + additional_chunks
+            logger.info(f"  Re-ranking {len(all_chunks)} total chunks ({len(search_results)} initial + {len(additional_chunks)} additional)")
+        else:
+            all_chunks = search_results
+
+        return rerank_chunks(query, all_chunks, top_n)
+    else:
+        return search_results[:top_n]
 
 
 def fetch_chunks_by_chunk_ids(chunk_ids: List[str]) -> Dict[int, SearchResult]:
     """Fetch chunks by their chunk IDs, returning chunk_id -> SearchResult"""
     if not chunk_ids:
         return {}
-    
+
     stmt = text(
         """
 select
@@ -136,10 +159,10 @@ join documents doc
 where chk.document_chunk_id = ANY(:chunk_ids)
 """
     )
-    
+
     with Session(engine) as session:
         result_chunks = session.execute(stmt, {'chunk_ids': chunk_ids}).fetchall()
-    
+
     chunkid_to_searchresult = {}
     for chunk in result_chunks:
         chunk_metadata = chunk.doc_metadata or {}
@@ -160,18 +183,137 @@ where chk.document_chunk_id = ANY(:chunk_ids)
         chunkid_to_searchresult[chunk.document_chunk_id] = result
     return chunkid_to_searchresult
 
+
+def fetch_additional_chunks_from_documents(
+    document_ids: List[int],
+    exclude_chunk_ids: List[int] = None,
+    chunks_per_document: int = 5
+) -> List[SearchResult]:
+    """
+    Fetch additional chunks from documents using round-robin section sampling.
+
+    Args:
+        document_ids: Document IDs to fetch from
+        exclude_chunk_ids: Chunks to exclude
+        chunks_per_document: Max chunks per document
+
+    Returns:
+        List of SearchResult objects
+    """
+    if not document_ids:
+        return []
+
+    exclude_chunk_ids = exclude_chunk_ids or []
+
+    # Round-robin sampling with section prioritization
+    # High priority: answer-rich and context-rich sections
+    # Low priority: methods, ethics, acknowledgments, etc.
+    stmt = text(
+        """
+WITH section_ranked AS (
+  SELECT
+    chk.document_chunk_id,
+    chk.content,
+    chk.section,
+    chk.document_id,
+    chk.chunk_index,
+    doc.source_id,
+    doc.title,
+    doc.doc_metadata,
+    ROW_NUMBER() OVER (PARTITION BY chk.document_id, chk.section ORDER BY chk.chunk_index) as section_rank,
+    CASE
+      WHEN LOWER(chk.section) LIKE '%abstract%'
+        OR LOWER(chk.section) LIKE '%conclusion%'
+        OR LOWER(chk.section) LIKE '%discussion%'
+        OR LOWER(chk.section) LIKE '%result%'
+        OR LOWER(chk.section) LIKE '%introduction%'
+        OR LOWER(chk.section) LIKE '%background%'
+        OR LOWER(chk.section) LIKE '%limitation%'
+      THEN 1
+      ELSE 2
+    END as section_priority
+  FROM document_chunks chk
+  JOIN documents doc ON chk.document_id = doc.document_id
+  WHERE chk.document_id = ANY(:document_ids)
+    AND (:exclude_empty OR chk.document_chunk_id != ALL(:exclude_chunk_ids))
+)
+SELECT
+  document_chunk_id,
+  content,
+  section,
+  document_id,
+  source_id,
+  title,
+  doc_metadata
+FROM (
+  SELECT *,
+    ROW_NUMBER() OVER (
+      PARTITION BY document_id
+      ORDER BY section_rank, section_priority, section
+    ) as overall_rank
+  FROM section_ranked
+) ranked
+WHERE overall_rank <= :chunks_per_doc
+ORDER BY document_id, overall_rank
+"""
+    )
+
+    with Session(engine) as session:
+        result_chunks = session.execute(stmt, {
+            'document_ids': document_ids,
+            'exclude_chunk_ids': exclude_chunk_ids if exclude_chunk_ids else [-1],
+            'exclude_empty': len(exclude_chunk_ids) > 0,
+            'chunks_per_doc': chunks_per_document
+        }).fetchall()
+
+    additional_chunks = []
+    for chunk in result_chunks:
+        chunk_metadata = chunk.doc_metadata or {}
+        result = SearchResult(
+            chunk_id=chunk.document_chunk_id,
+            section=chunk.section,
+            content=chunk.content,
+            query="",  # No query for additional chunks
+            similarity_score=None,  # No similarity score
+            document_id=chunk.document_id,
+            source_id=chunk.source_id,
+            title=chunk.title,
+            authors=chunk_metadata.get("authors", []),
+            publication_date=chunk_metadata.get("pub_date", ""),
+            journal=chunk_metadata.get("journal", ""),
+            doi=chunk_metadata.get("doi", "")
+        )
+        additional_chunks.append(result)
+
+    return additional_chunks
+
 def hybrid_retrieval(
-        query: str, 
-        conversation_history: Optional[List[dict]] = None, 
+        query: str,
+        conversation_history: Optional[List[dict]] = None,
         top_k = 20,
         top_n = 5,
         max_historical_chunks = 15,
-        use_reranker = False
+        use_reranker = False,
+        additional_chunks_per_doc: int = 0
 ) -> List[SearchResult]:
-    """Hybrid retrieval, semantic search + most recent historical chunks"""
+    """
+    Hybrid retrieval combining semantic search with conversation history.
+
+    Args:
+        query: Search query
+        conversation_history: Previous conversation turns
+        top_k: Initial retrieval size
+        top_n: Final results to return
+        max_historical_chunks: Max historical chunks to include
+        use_reranker: Whether to use cross-encoder re-ranking
+        additional_chunks_per_doc: Extra chunks per doc for re-ranking
+
+    Returns:
+        List of SearchResult objects
+    """
 
     hybrid_start = time.time()
-    new_chunks = semantic_search(query, top_k, top_n, use_reranker)
+    new_chunks = semantic_search(query, top_k, top_n, use_reranker, additional_chunks_per_doc)
     
     recent_chunk_ids = []
     seen_chunk_ids = set(chunk.chunk_id for chunk in new_chunks) 
