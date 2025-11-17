@@ -55,8 +55,8 @@ class UserRequest(BaseModel):
     conversation_id: Optional[str] = None
     use_reranker: bool = False
     additional_chunks_per_doc: int = 0
-    top_n: int = 20
-    top_k: int = 5
+    top_k: int = 10
+    top_n: int = 5
 
 class ConversationSummaryResponse(BaseModel):
     conversation_id: str 
