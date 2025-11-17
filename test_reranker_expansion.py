@@ -29,6 +29,7 @@ def test_reranker_expansion():
         query=query,
         top_k=10,
         top_n=5,
+        use_reranker=True,
         additional_chunks_per_doc=0
     )
 
@@ -50,6 +51,7 @@ def test_reranker_expansion():
         query=query,
         top_k=10,
         top_n=5,
+        use_reranker=True,
         additional_chunks_per_doc=5
     )
 

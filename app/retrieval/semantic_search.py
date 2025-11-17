@@ -26,19 +26,21 @@ def semantic_search(
     query: str,
     top_k: int = 10,
     top_n: int = 5,
+    use_reranker: bool = False,
     additional_chunks_per_doc: int = 0
 ) -> List[SearchResult]:
     """
-    Semantic search over document chunks with re-ranking.
+    Semantic search over document chunks with optional re-ranking.
 
     Args:
         query: Search query
         top_k: Initial retrieval size (default: 10)
         top_n: Final results to return (default: 5)
+        use_reranker: Whether to use cross-encoder re-ranking (default: False)
         additional_chunks_per_doc: Extra chunks per doc for re-ranking, 0 to disable (default: 0)
 
     Returns:
-        List of re-ranked SearchResult objects
+        List of SearchResult objects
     """
     global _embedding_service
 
@@ -104,32 +106,35 @@ limit :top_k
         )
         search_results.append(result)
 
-    # Re-rank results
-    from app.retrieval.reranker import get_reranker
-    reranker = get_reranker()
-    logger.info(f"  Using reranker model: {reranker.model_name}")
+    # Optionally re-rank results
+    if use_reranker:
+        from app.retrieval.reranker import get_reranker
+        reranker = get_reranker()
+        logger.info(f"  Using reranker model: {reranker.model_name}")
 
-    # Optionally expand chunks before re-ranking
-    if additional_chunks_per_doc > 0:
-        expand_start = time.time()
-        document_ids = list(set(result.document_id for result in search_results))
-        initial_chunk_ids = [result.chunk_id for result in search_results]
+        # Optionally expand chunks before re-ranking
+        if additional_chunks_per_doc > 0:
+            expand_start = time.time()
+            document_ids = list(set(result.document_id for result in search_results))
+            initial_chunk_ids = [result.chunk_id for result in search_results]
 
-        additional_chunks = fetch_additional_chunks_from_documents(
-            document_ids=document_ids,
-            exclude_chunk_ids=initial_chunk_ids,
-            chunks_per_document=additional_chunks_per_doc
-        )
+            additional_chunks = fetch_additional_chunks_from_documents(
+                document_ids=document_ids,
+                exclude_chunk_ids=initial_chunk_ids,
+                chunks_per_document=additional_chunks_per_doc
+            )
 
-        expand_time = (time.time() - expand_start) * 1000
-        logger.info(f"  Expanded to {len(additional_chunks)} additional chunks from {len(document_ids)} documents ({expand_time:.0f}ms)")
+            expand_time = (time.time() - expand_start) * 1000
+            logger.info(f"  Expanded to {len(additional_chunks)} additional chunks from {len(document_ids)} documents ({expand_time:.0f}ms)")
 
-        all_chunks = search_results + additional_chunks
-        logger.info(f"  Re-ranking {len(all_chunks)} total chunks ({len(search_results)} initial + {len(additional_chunks)} additional)")
+            all_chunks = search_results + additional_chunks
+            logger.info(f"  Re-ranking {len(all_chunks)} total chunks ({len(search_results)} initial + {len(additional_chunks)} additional)")
+        else:
+            all_chunks = search_results
+
+        return rerank_chunks(query, all_chunks, top_n)
     else:
-        all_chunks = search_results
-
-    return rerank_chunks(query, all_chunks, top_n)
+        return search_results[:top_n]
 
 
 def fetch_chunks_by_chunk_ids(chunk_ids: List[str]) -> Dict[int, SearchResult]:
@@ -275,6 +280,7 @@ def hybrid_retrieval(
         top_k = 20,
         top_n = 5,
         max_historical_chunks = 15,
+        use_reranker = False,
         additional_chunks_per_doc: int = 0
 ) -> List[SearchResult]:
     """
@@ -286,6 +292,7 @@ def hybrid_retrieval(
         top_k: Initial retrieval size
         top_n: Final results to return
         max_historical_chunks: Max historical chunks to include
+        use_reranker: Whether to use cross-encoder re-ranking
         additional_chunks_per_doc: Extra chunks per doc for re-ranking
 
     Returns:
@@ -293,7 +300,7 @@ def hybrid_retrieval(
     """
 
     hybrid_start = time.time()
-    new_chunks = semantic_search(query, top_k, top_n, additional_chunks_per_doc)
+    new_chunks = semantic_search(query, top_k, top_n, use_reranker, additional_chunks_per_doc)
     
     recent_chunk_ids = []
     seen_chunk_ids = set(chunk.chunk_id for chunk in new_chunks) 
