@@ -54,6 +54,7 @@ class UserRequest(BaseModel):
     use_local: Optional[bool] = None
     conversation_id: Optional[str] = None
     use_reranker: bool = False
+    additional_chunks_per_doc: int = 0
     top_n: int = 20
     top_k: int = 5
 
@@ -155,8 +156,8 @@ async def send_message_stream(request: UserRequest):
         try:
             # Fetch top k chunks
             retrieval_start = time.time()
-            chunks = semantic_search(request.user_message, request.top_k, request.top_n, request.use_reranker)
-            # chunks = hybrid_retrieval(request.user_message, conversation_history, request.top_k, request.top_n, request.use_reranker)
+            chunks = semantic_search(request.user_message, request.top_k, request.top_n, request.use_reranker, request.additional_chunks_per_doc)
+            # chunks = hybrid_retrieval(request.user_message, conversation_history, request.top_k, request.top_n, request.use_reranker, request.additional_chunks_per_doc)
             retrieval_time = (time.time() - retrieval_start) * 1000
             logger.info(f"Retrieval time: {retrieval_time:.0f}ms")
 
@@ -231,8 +232,8 @@ async def send_message(request: UserRequest):
     try:
         # Fetch top k chunks
         retrieval_start = time.time()
-        chunks = semantic_search(request.user_message, request.top_k, request.top_n, request.use_reranker)
-        # chunks = hybrid_retrieval(request.user_message, conversation_history, request.top_k, request.top_n, request.use_reranker)
+        chunks = semantic_search(request.user_message, request.top_k, request.top_n, request.use_reranker, request.additional_chunks_per_doc)
+        # chunks = hybrid_retrieval(request.user_message, conversation_history, request.top_k, request.top_n, request.use_reranker, request.additional_chunks_per_doc)
         retrieval_time = (time.time() - retrieval_start) * 1000
         logger.info(f"Retrieval time: {retrieval_time:.0f}ms")
 
