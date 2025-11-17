@@ -206,9 +206,8 @@ def fetch_additional_chunks_from_documents(
     exclude_chunk_ids = exclude_chunk_ids or []
 
     # Round-robin sampling with section prioritization
-    # Tier 1: abstract, conclusions, discussion, results (answer-rich)
-    # Tier 2: introduction, background, limitations (context-rich)
-    # Tier 3: everything else
+    # High priority: answer-rich and context-rich sections
+    # Low priority: methods, ethics, acknowledgments, etc.
     stmt = text(
         """
 WITH section_ranked AS (
@@ -223,10 +222,15 @@ WITH section_ranked AS (
     doc.doc_metadata,
     ROW_NUMBER() OVER (PARTITION BY chk.document_id, chk.section ORDER BY chk.chunk_index) as section_rank,
     CASE
-      WHEN LOWER(chk.section) IN ('abstract', 'conclusion', 'conclusions', 'discussion', 'results',
-                                    'results and discussion') THEN 1
-      WHEN LOWER(chk.section) IN ('introduction', '1. introduction', 'background', 'limitations') THEN 2
-      ELSE 3
+      WHEN LOWER(chk.section) LIKE '%abstract%'
+        OR LOWER(chk.section) LIKE '%conclusion%'
+        OR LOWER(chk.section) LIKE '%discussion%'
+        OR LOWER(chk.section) LIKE '%result%'
+        OR LOWER(chk.section) LIKE '%introduction%'
+        OR LOWER(chk.section) LIKE '%background%'
+        OR LOWER(chk.section) LIKE '%limitation%'
+      THEN 1
+      ELSE 2
     END as section_priority
   FROM document_chunks chk
   JOIN documents doc ON chk.document_id = doc.document_id
