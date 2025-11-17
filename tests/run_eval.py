@@ -6,7 +6,7 @@ Phase 2: RAGAS traditional metrics (BLEU, ROUGE, CHRF) - add later
 Phase 3: Manual review export - add later
 
 Usage:
-    python tests/run_eval.py --config baseline --output logs/results/eval_baseline.json
+    docker-compose exec api python -m tests.run_eval --run expansion_test --version 5_examples --limit 5
 """
 import argparse
 import csv
@@ -88,7 +88,11 @@ class RAGEvaluator:
         try:
             start_time = time.time()
 
-            payload = {"user_message": question}
+            payload = {
+                "user_message": question,
+                "use_reranker": True,
+                "additional_chunks_per_doc": 20
+            }
             if conversation_id:
                 payload["conversation_id"] = conversation_id
 

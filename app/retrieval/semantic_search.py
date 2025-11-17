@@ -50,7 +50,7 @@ def semantic_search(
 
     # Embed query
     embed_start = time.time()
-    query_embedding = _embedding_service.embed_single(query)
+    query_embedding = _embedding_service.embed_single(f"search_query: {query}")
     embed_time = (time.time() - embed_start) * 1000
     logger.info(f"  Query embedding time: {embed_time:.0f}ms")
 
@@ -222,20 +222,15 @@ WITH section_ranked AS (
     doc.doc_metadata,
     ROW_NUMBER() OVER (PARTITION BY chk.document_id, chk.section ORDER BY chk.chunk_index) as section_rank,
     CASE
-      WHEN LOWER(chk.section) LIKE '%abstract%'
-        OR LOWER(chk.section) LIKE '%conclusion%'
-        OR LOWER(chk.section) LIKE '%discussion%'
-        OR LOWER(chk.section) LIKE '%result%'
-        OR LOWER(chk.section) LIKE '%introduction%'
-        OR LOWER(chk.section) LIKE '%background%'
-        OR LOWER(chk.section) LIKE '%limitation%'
+      WHEN LOWER(chk.section) 
+      LIKE ANY(ARRAY['%abstract%', '%conclusion%', '%discussion%', '%result%', '%introduction%', '%background%', '%limitation%'])
       THEN 1
       ELSE 2
     END as section_priority
   FROM document_chunks chk
   JOIN documents doc ON chk.document_id = doc.document_id
   WHERE chk.document_id = ANY(:document_ids)
-    AND (:exclude_empty OR chk.document_chunk_id != ALL(:exclude_chunk_ids))
+    AND chk.document_chunk_id != ALL(:exclude_chunk_ids)
 )
 SELECT
   document_chunk_id,
@@ -261,8 +256,7 @@ ORDER BY document_id, overall_rank
     with Session(engine) as session:
         result_chunks = session.execute(stmt, {
             'document_ids': document_ids,
-            'exclude_chunk_ids': exclude_chunk_ids if exclude_chunk_ids else [-1],
-            'exclude_empty': len(exclude_chunk_ids) > 0,
+            'exclude_chunk_ids': exclude_chunk_ids if exclude_chunk_ids else [],
             'chunks_per_doc': chunks_per_document
         }).fetchall()
 

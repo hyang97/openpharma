@@ -52,7 +52,8 @@ export function useChat(API_URL: string, useStreaming = false) {
                 body: JSON.stringify({
                     user_message: user_input,
                     conversation_id: requestConversationId,
-                    use_reranker: true
+                    use_reranker: true,
+                    additional_chunks_per_doc: 20
                 })
             })
 
@@ -225,7 +226,8 @@ export function useChat(API_URL: string, useStreaming = false) {
                 user_message: user_input,
                 use_local: true,
                 conversation_id: requestConversationId,
-                use_reranker: true
+                use_reranker: true,
+                additional_chunks_per_doc: 20
             }), 
             signal: AbortSignal.timeout(6 * 60 * 1000) // 6 minute timeout
         })
