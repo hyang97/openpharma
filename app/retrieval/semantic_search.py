@@ -225,11 +225,11 @@ def fetch_additional_chunks_from_documents(
 
     exclude_chunk_ids = exclude_chunk_ids or []
 
-    # Use DISTINCT ON to get diverse chunks from each document
-    # Order by chunk_index to get sequential content from the paper
+    # Round-robin sampling: take 1st chunk from each section, then 2nd from each, etc.
+    # This ensures maximum section diversity
     stmt = text(
         """
-WITH ranked_chunks AS (
+WITH section_ranked AS (
   SELECT
     chk.document_chunk_id,
     chk.content,
@@ -239,11 +239,13 @@ WITH ranked_chunks AS (
     doc.source_id,
     doc.title,
     doc.doc_metadata,
-    ROW_NUMBER() OVER (PARTITION BY chk.document_id ORDER BY chk.chunk_index) as rn
+    ROW_NUMBER() OVER (PARTITION BY chk.document_id, chk.section ORDER BY chk.chunk_index) as section_rank
   FROM document_chunks chk
   JOIN documents doc ON chk.document_id = doc.document_id
   WHERE chk.document_id = ANY(:document_ids)
     AND (:exclude_empty OR chk.document_chunk_id != ALL(:exclude_chunk_ids))
+    AND LOWER(chk.section) NOT IN ('ethics', 'acknowledgments', 'funding', 'conflicts of interest',
+                                     'author contributions', 'competing interests')
 )
 SELECT
   document_chunk_id,
@@ -253,9 +255,13 @@ SELECT
   source_id,
   title,
   doc_metadata
-FROM ranked_chunks
-WHERE rn <= :chunks_per_doc
-ORDER BY document_id, chunk_index
+FROM (
+  SELECT *,
+    ROW_NUMBER() OVER (PARTITION BY document_id ORDER BY section_rank, section) as overall_rank
+  FROM section_ranked
+) ranked
+WHERE overall_rank <= :chunks_per_doc
+ORDER BY document_id, overall_rank
 """
     )
 
