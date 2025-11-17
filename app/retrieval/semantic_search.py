@@ -205,8 +205,10 @@ def fetch_additional_chunks_from_documents(
 
     exclude_chunk_ids = exclude_chunk_ids or []
 
-    # Round-robin sampling: take 1st chunk from each section, then 2nd from each, etc.
-    # This ensures maximum section diversity
+    # Round-robin sampling with section prioritization
+    # Tier 1: abstract, conclusions, discussion, results (answer-rich)
+    # Tier 2: introduction, background, limitations (context-rich)
+    # Tier 3: everything else
     stmt = text(
         """
 WITH section_ranked AS (
@@ -219,13 +221,17 @@ WITH section_ranked AS (
     doc.source_id,
     doc.title,
     doc.doc_metadata,
-    ROW_NUMBER() OVER (PARTITION BY chk.document_id, chk.section ORDER BY chk.chunk_index) as section_rank
+    ROW_NUMBER() OVER (PARTITION BY chk.document_id, chk.section ORDER BY chk.chunk_index) as section_rank,
+    CASE
+      WHEN LOWER(chk.section) IN ('abstract', 'conclusion', 'conclusions', 'discussion', 'results',
+                                    'results and discussion') THEN 1
+      WHEN LOWER(chk.section) IN ('introduction', '1. introduction', 'background', 'limitations') THEN 2
+      ELSE 3
+    END as section_priority
   FROM document_chunks chk
   JOIN documents doc ON chk.document_id = doc.document_id
   WHERE chk.document_id = ANY(:document_ids)
     AND (:exclude_empty OR chk.document_chunk_id != ALL(:exclude_chunk_ids))
-    AND LOWER(chk.section) NOT IN ('ethics', 'acknowledgments', 'funding', 'conflicts of interest',
-                                     'author contributions', 'competing interests')
 )
 SELECT
   document_chunk_id,
@@ -237,7 +243,10 @@ SELECT
   doc_metadata
 FROM (
   SELECT *,
-    ROW_NUMBER() OVER (PARTITION BY document_id ORDER BY section_rank, section) as overall_rank
+    ROW_NUMBER() OVER (
+      PARTITION BY document_id
+      ORDER BY section_rank, section_priority, section
+    ) as overall_rank
   FROM section_ranked
 ) ranked
 WHERE overall_rank <= :chunks_per_doc
