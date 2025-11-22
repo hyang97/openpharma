@@ -27,6 +27,7 @@ services:
       - ./app:/app/app
       - ./scripts:/app/scripts
       - ./tests:/app/tests
+      - ./evals:/app/evals
       - ./logs:/app/logs
       - ./data:/app/data
       - ./backups:/app/backups

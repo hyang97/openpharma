@@ -1,0 +1,97 @@
+{
+  "type": "object",
+  "properties": {
+    "evaluations": {
+      "type": "array",
+      "description": "List of evaluations for each question",
+      "items": {
+        "type": "object",
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "description": "Question identifier (e.g., pubmedqa_21645374)"
+          },
+          "conclusion_match": {
+            "type": "string",
+            "enum": ["CORRECT", "INCORRECT"],
+            "description": "Does RAG answer match expected yes/no/maybe conclusion?"
+          },
+          "reasoning_match": {
+            "type": "string",
+            "enum": ["CORRECT", "INCORRECT"],
+            "description": "Does RAG reasoning align with ground truth long answer?"
+          },
+          "faithfulness": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Is answer grounded in retrieved context? (1=hallucinations, 5=fully supported)"
+          },
+          "relevance": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Does answer address the question? (1=irrelevant, 5=perfectly relevant)"
+          },
+          "precision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Are retrieved chunks relevant to question? (1=not relevant, 5=highly relevant)"
+          },
+          "recall": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Does context contain ground truth info? (1=missing most, 5=contains all)"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Optional notes about this evaluation"
+          }
+        },
+        "required": ["question_id", "conclusion_match", "reasoning_match", "faithfulness", "relevance", "precision", "recall"]
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "Aggregate statistics across all evaluations",
+      "properties": {
+        "conclusion_match_correct": {
+          "type": "integer",
+          "description": "Number of questions with correct conclusion match"
+        },
+        "reasoning_match_correct": {
+          "type": "integer",
+          "description": "Number of questions with correct reasoning match"
+        },
+        "avg_faithfulness": {
+          "type": "number",
+          "description": "Average faithfulness score (1-5)"
+        },
+        "avg_relevance": {
+          "type": "number",
+          "description": "Average relevance score (1-5)"
+        },
+        "avg_precision": {
+          "type": "number",
+          "description": "Average precision score (1-5)"
+        },
+        "avg_recall": {
+          "type": "number",
+          "description": "Average recall score (1-5)"
+        },
+        "key_findings": {
+          "type": "string",
+          "description": "What worked well and what didn't? Common error patterns?"
+        },
+        "recommendation": {
+          "type": "string",
+          "description": "Is this configuration suitable for production?"
+        }
+      },
+      "required": ["conclusion_match_correct", "reasoning_match_correct", "avg_faithfulness", "avg_relevance", "avg_precision", "avg_recall", "key_findings", "recommendation"]
+    }
+  },
+  "required": ["evaluations", "summary"]
+}

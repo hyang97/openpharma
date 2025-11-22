@@ -77,6 +77,8 @@ class ChatResponse(BaseModel):
     generated_response: str
     response_citations: List[Citation]
     conversation_citations: List[Citation]
+    retrieved_chunk_ids: List[int]
+    raw_llm_response: str
     llm_provider: str
     generation_time_ms: float
     conversation_id: str
@@ -272,6 +274,8 @@ async def send_message(request: UserRequest):
             generated_response=display_response,
             response_citations=numbered_response_citations,  # Use numbered citations
             conversation_citations=conversation_citations,
+            retrieved_chunk_ids=[chunk.chunk_id for chunk in chunks],
+            raw_llm_response=generated_response,
             llm_provider="ollama" if use_local else "openai",
             generation_time_ms=generation_time_ms,
             conversation_id=conversation_id
