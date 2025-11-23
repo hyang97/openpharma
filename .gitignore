@@ -57,6 +57,9 @@ Thumbs.db
 *.log
 logs/
 
+# MLFlow experiment tracking
+mlruns/
+
 # Database
 *.db
 *.sqlite3
