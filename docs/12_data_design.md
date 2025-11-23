@@ -126,15 +126,14 @@ Each phase stores persistent state and can be run independently. The original mo
 
 ### Schema Overview
 
-Five tables support the system:
+Four tables support the system:
 
 | Table | Purpose | Size | Notes |
 |-------|---------|------|-------|
 | `pubmed_papers` | Track PMC IDs and fetch status | Small | Ingestion pipeline |
-| `documents` | Store document content and metadata | ~50GB | Core data |
-| `document_chunks` | Store chunks and embeddings | ~50GB | RAG retrieval |
-| `icite_metadata` | Citation metrics for all PubMed papers | ~12GB | Landmark filtering, KOL analysis |
-| `citation_links` | Citation network edges | ~12-18GB | Co-citation analysis, future graph features |
+| `documents` | Store document content and metadata | ~3.6GB | Core data |
+| `document_chunks` | Store chunks and embeddings | ~48GB | RAG retrieval |
+| `icite_metadata` | Citation metrics for all PubMed papers | ~32GB | Landmark filtering, future KOL analysis |
 
 ---
 
@@ -320,36 +319,13 @@ CREATE INDEX idx_icite_citation_count ON icite_metadata(citation_count);
 
 ---
 
-### Table 5: `citation_links`
+### Dropped Tables
 
-Stores citation network edges for co-citation analysis and KOL identification.
-
-```sql
-CREATE TABLE citation_links (
-    citing BIGINT NOT NULL,                  -- Paper that cites
-    referenced BIGINT NOT NULL,              -- Paper being cited
-    PRIMARY KEY (citing, referenced)
-);
-
-CREATE INDEX idx_citation_links_citing ON citation_links(citing);
-CREATE INDEX idx_citation_links_cited ON citation_links(referenced);
-```
-
-**Purpose**:
-- Identify co-cited papers (papers frequently cited together)
-- Find authors whose work is highly interconnected
-- Enable future graph analysis (Phase 2: can migrate to Neo4j for Graph RAG)
-
-**Data Source**: NIH Open Citation Collection (part of iCite snapshot)
-
-**Size**: ~12-18GB with indexes for ~50M citation relationships
-
-**Phase 1 Use Cases**:
-- SQL queries for 2-hop co-citations
-- Most-cited authors by aggregating citation counts
-- Citation network statistics
-
-**Phase 2 Migration**: Consider Neo4j if building citation network visualizations, multi-hop graph traversals, or Graph RAG
+**`citation_links` (dropped 2025-01-23)**
+- Previously stored 870M citation network edges (81 GB)
+- Purpose: Co-citation analysis, KOL identification, future Graph RAG
+- Reason for dropping: Not used in Phase 1, consumed 49% of database storage
+- Can be re-imported from NIH iCite snapshot if needed for Phase 2 features
 
 ---
 
