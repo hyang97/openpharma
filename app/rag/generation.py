@@ -22,25 +22,22 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 # Number of tokens to lookahead for ## References
 LOOKAHEAD_LENGTH = 5
 
-
-def build_messages(user_message: str, chunks: list[SearchResult], conversation_history: Optional[List[dict]]) -> List[dict]:
-    """Build RAG prompt with user message, context, and literature chunks."""
-
-    SYSTEM_PROMPT = """
+# System prompt for RAG generation
+SYSTEM_PROMPT = """
 <Task Context>
-This is the generation step of a retrieval-augmented generation (RAG) workflow that powers OpenPharma, an AI-powered research & insights product. 
+This is the generation step of a retrieval-augmented generation (RAG) workflow that powers OpenPharma, an AI-powered research & insights product.
 Users can ask questions in natural language and receive instant answers, transforming a multi-day research process into a matter of minutes in a chat-based interface.
 Users may be competitive intelligence analysts, commercial strategists, brand managers, pharma consultants, etc. to inform business decisions.
 </Task Context>
 
 <Role Context>
-You are an expert pharmaceutical researcher. 
+You are an expert pharmaceutical researcher.
 Your role is to synthesize findings from scientific literature for life sciences companies & consultants, providing answers that are backed by credible evidence and verifiable citations.
 </Role Context>
 
 <Task Description>
 Query and Synthesize Scientific Literature: Users may ask questions about drug efficacy, safety, mechanisms of action, key opinion leaders, etc.
-You will review scientific literature passages in <Literature> in order to answer the user's query. 
+You will review scientific literature passages in <Literature> in order to answer the user's query.
 You will think through step-by-step to pull in relevant details from <Literature> to support the answer. Reflect on your confidence in your answer based on the relevance, completeness, and consistency of the provided <Literature>.
 You will respond concisely, summarizing the main answer, and providing supporting details from <Literature> with citations.
 </Task Description>
@@ -72,6 +69,10 @@ Notes:
 [2] ..."
 </Incorrect Examples>"
 """
+
+
+def build_messages(user_message: str, chunks: list[SearchResult], conversation_history: Optional[List[dict]]) -> List[dict]:
+    """Build RAG prompt with user message, context, and literature chunks."""
     messages = []
     messages.append({'role': 'system', 'content': SYSTEM_PROMPT})
 

@@ -1,14 +1,15 @@
 """
 Merge automated evaluation results with LLM-as-judge scores.
 
-Combines automated metrics with LLM-as-judge evaluations from Gemini.
+Combines automated metrics with LLM-as-judge evaluations from Gemini and logs them to MLFlow.
 
 Usage:
-    python -m evals.merge_auto_and_judge --run baseline --version v1
+    python -m evals.merge_auto_and_judge --experiment baseline --run v1
 """
 import argparse
 import csv
 import json
+import mlflow
 
 from evals.core.schemas import EvaluationConfig
 from evals.core.utils import load_json, save_json
@@ -138,20 +139,64 @@ def merge_results(config: EvaluationConfig):
     print(f"    Avg Precision: {judge_sum['avg_precision']:.1f}/5")
     print(f"    Avg Recall: {judge_sum['avg_recall']:.1f}/5")
 
+    return combined_summary
+
+
+def log_to_mlflow(config: EvaluationConfig, combined_summary: dict):
+    """Log LLM-as-judge metrics to existing MLFlow run."""
+    mlflow.set_experiment(config.experiment_name)
+
+    # Find the existing run by run_name
+    experiment = mlflow.get_experiment_by_name(config.experiment_name)
+    if not experiment:
+        print(f"Warning: Experiment '{config.experiment_name}' not found in MLFlow. Skipping MLFlow logging.")
+        return
+
+    runs = mlflow.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        filter_string=f"tags.mlflow.runName = '{config.run_id}'"
+    )
+
+    if runs.empty:
+        print(f"Warning: Run '{config.run_id}' not found in experiment '{config.experiment_name}'. Skipping MLFlow logging.")
+        return
+
+    run_id = runs.iloc[0].run_id
+
+    # Log LLM-as-judge metrics to the existing run
+    with mlflow.start_run(run_id=run_id):
+        judge_sum = combined_summary['llm_judge_evaluation']
+        total_questions = combined_summary.get('total_questions', 0)
+
+        # Log aggregate metrics
+        mlflow.log_metric("conclusion_match_rate", judge_sum['conclusion_match_correct'] / total_questions if total_questions > 0 else 0)
+        mlflow.log_metric("reasoning_match_rate", judge_sum['reasoning_match_correct'] / total_questions if total_questions > 0 else 0)
+        mlflow.log_metric("avg_faithfulness", judge_sum['avg_faithfulness'])
+        mlflow.log_metric("avg_relevance", judge_sum['avg_relevance'])
+        mlflow.log_metric("avg_precision", judge_sum['avg_precision'])
+        mlflow.log_metric("avg_recall", judge_sum['avg_recall'])
+
+        # Log complete results as artifact
+        mlflow.log_artifact(config.get_complete_results_path(), "merged_results")
+
+        print(f"\n✅ LLM-as-judge metrics logged to MLFlow run: {run_id}")
+        print(f"   View at: http://127.0.0.1:5001")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Merge automated and LLM-as-judge evaluation results")
-    parser.add_argument("--run", required=True, help="Evaluation run name")
-    parser.add_argument("--version", required=True, help="Version name")
+    parser.add_argument("--experiment", required=True, help="Experiment name")
+    parser.add_argument("--run", required=True, help="Run identifier")
 
     args = parser.parse_args()
 
     config = EvaluationConfig(
-        run_name=args.run,
-        version=args.version
+        experiment_name=args.experiment,
+        run_id=args.run
     )
 
-    merge_results(config)
+    combined_summary = merge_results(config)
+    log_to_mlflow(config, combined_summary)
 
 
 if __name__ == "__main__":
