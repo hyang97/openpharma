@@ -484,20 +484,6 @@ def submit_batch(args):
         try:
             openai_batch_id = embedder.submit_batch_embed(current_batch_chunks, batch_filepath)
 
-            # # Record metadata
-            # metadata = {
-            #     'openai_batch_id': openai_batch_id,
-            #     'batch_number': current_batch_idx,
-            #     'submitted_at': datetime.now().isoformat(),
-            #     'doc_count': len(current_batch_doc_ids),
-            #     'chunk_count': len(current_batch_chunks),
-            #     'input_file': batch_filepath
-            # }
-
-            # # Write metadata incrementally (append mode)
-            # with open(metadata_file, 'a') as f:
-            #     f.write(json.dumps(metadata) + '\n')
-
             # Record metadata in OpenAIBatch table
             openai_batch_record = OpenAIBatch(
                 openai_batch_id = openai_batch_id,

@@ -1,12 +1,15 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel, Field, validator
 import time
 import os
 import json
 import asyncio
 import logging
+from logging.handlers import RotatingFileHandler
+import requests
+import re
 from typing import Optional, List
 
 from app.models import Citation, SearchResult
@@ -27,15 +30,35 @@ setup_logging(
 )
 logger = get_logger(__name__)
 
-# Configure metrics logger to separate file
+# Configure metrics logger with rotation
 metrics_logger = get_logger("metrics")
-metrics_handler = logging.FileHandler("logs/streaming_metrics.log")
+metrics_handler = RotatingFileHandler(
+    "logs/streaming_metrics.log",
+    maxBytes=10 * 1024 * 1024,  # 10MB
+    backupCount=5
+)
 metrics_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 metrics_logger.addHandler(metrics_handler)
 metrics_logger.setLevel(logging.INFO)
 metrics_logger.propagate = False  # Don't send to root logger
 
 app = FastAPI(title="OpenPharma API", version="0.1.0")
+
+# Request size limit middleware (1MB max body size)
+MAX_REQUEST_SIZE = 1024 * 1024  # 1 MB
+
+@app.middleware("http")
+async def limit_request_size(request: Request, call_next):
+    """Limit request body size to prevent large payload attacks."""
+    if request.method in ["POST", "PUT", "PATCH"]:
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > MAX_REQUEST_SIZE:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": f"Request body too large. Maximum size: {MAX_REQUEST_SIZE / 1024 / 1024}MB"}
+            )
+    response = await call_next(request)
+    return response
 
 # Configure CORS to allow requests from React frontend
 app.add_middleware(
@@ -50,13 +73,29 @@ app.add_middleware(
 )
 
 class UserRequest(BaseModel):
-    user_message: str
+    user_message: str = Field(..., max_length=10000, description="User's question (max 10,000 characters)")
     use_local: Optional[bool] = None
     conversation_id: Optional[str] = None
     use_reranker: bool = False
-    additional_chunks_per_doc: int = 0
-    top_k: int = 10
-    top_n: int = 5
+    # Range validation to prevent resource exhaustion
+    additional_chunks_per_doc: int = Field(0, ge=0, le=50)  # Max 50 additional chunks per doc
+    top_k: int = Field(10, ge=1, le=200)  # Semantic search retrieves 1-200 chunks
+    top_n: int = Field(5, ge=1, le=20)    # Final context uses 1-20 chunks
+
+    @validator('user_message')
+    def validate_message(cls, v):
+        if not v or not v.strip():
+            raise ValueError('user_message cannot be empty')
+        # Strip HTML tags for XSS prevention
+        v = re.sub(r'<[^>]+>', '', v)
+        return v.strip()
+
+    @validator('conversation_id')
+    def validate_conversation_id(cls, v):
+        # Alphanumeric with underscore/hyphen only (prevents injection)
+        if v and not re.match(r'^[a-zA-Z0-9_-]+$', v):
+            raise ValueError('conversation_id must be alphanumeric with _ or -')
+        return v
 
 class ConversationSummaryResponse(BaseModel):
     conversation_id: str 
@@ -83,10 +122,24 @@ class ChatResponse(BaseModel):
     generation_time_ms: float
     conversation_id: str
 
+def check_ollama_version():
+    """Verify Ollama 0.11.x (0.12.5 has EOF bug)."""
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    try:
+        version = requests.get(f"{ollama_url}/api/version", timeout=5).json()["version"]
+        major, minor = map(int, version.split(".")[:2])
+        if major == 0 and minor == 11:
+            logger.info(f"Ollama {version} ✓")
+            return
+        raise RuntimeError(f"Ollama {version} unsupported. Need 0.11.x")
+    except Exception as e:
+        logger.warning(f"Ollama version check failed: {e}")
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting OpenPharma API")
     logger.info(f"Using local LLM: {os.getenv('USE_LOCAL_LLM', 'true')}")
+    check_ollama_version()
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -94,8 +147,16 @@ async def shutdown_event():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "message": "OpenPharma API is running"}
+    """Health check with Ollama service status"""
+    status = {"api": "ok"}
+    try:
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        requests.get(f"{ollama_url}/api/tags", timeout=2).raise_for_status()
+        status["ollama"] = "ok"
+    except Exception:
+        status["ollama"] = "down"
+        return JSONResponse(content=status, status_code=503)
+    return status
 
 @app.get("/conversations", response_model=List[ConversationSummaryResponse])
 async def get_all_conversation_summaries():
@@ -156,9 +217,10 @@ async def send_message_stream(request: UserRequest):
     async def event_generator():
         generated_response = ""
         try:
-            # Fetch top k chunks
+            # Fetch top k chunks (semantic search with optional reranking)
             retrieval_start = time.time()
             chunks = semantic_search(request.user_message, request.top_k, request.top_n, request.use_reranker, request.additional_chunks_per_doc)
+            # Alternative retrieval strategy (includes historical citations from conversation):
             # chunks = hybrid_retrieval(request.user_message, conversation_history, request.top_k, request.top_n, request.use_reranker, request.additional_chunks_per_doc)
             retrieval_time = (time.time() - retrieval_start) * 1000
             logger.info(f"Retrieval time: {retrieval_time:.0f}ms")
@@ -232,9 +294,10 @@ async def send_message(request: UserRequest):
     conversation_manager.add_message(conversation_id, "user", request.user_message)
 
     try:
-        # Fetch top k chunks
+        # Fetch top k chunks (semantic search with optional reranking)
         retrieval_start = time.time()
         chunks = semantic_search(request.user_message, request.top_k, request.top_n, request.use_reranker, request.additional_chunks_per_doc)
+        # Alternative retrieval strategy (includes historical citations from conversation):
         # chunks = hybrid_retrieval(request.user_message, conversation_history, request.top_k, request.top_n, request.use_reranker, request.additional_chunks_per_doc)
         retrieval_time = (time.time() - retrieval_start) * 1000
         logger.info(f"Retrieval time: {retrieval_time:.0f}ms")

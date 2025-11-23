@@ -10,24 +10,27 @@ from sqlalchemy import text
 def calculate_retrieval_accuracy(expected_pmc_id: str, retrieved_chunk_ids: List[int]) -> bool:
     """Check if any retrieved chunk came from expected article."""
     db = next(get_db())
-    stmt = text("""
-        SELECT EXISTS (
-            SELECT 1
-            FROM document_chunks c
-            JOIN documents d ON c.document_id = d.document_id
-            WHERE c.document_chunk_id = ANY(:chunk_ids)
-            AND d.source_id = :expected_pmc_id
-        )
-    """)
-    # Convert numpy types to Python types for psycopg2
-    chunk_ids_list = [int(x) for x in retrieved_chunk_ids]
-    pmc_id_str = str(expected_pmc_id)
+    try:
+        stmt = text("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM document_chunks c
+                JOIN documents d ON c.document_id = d.document_id
+                WHERE c.document_chunk_id = ANY(:chunk_ids)
+                AND d.source_id = :expected_pmc_id
+            )
+        """)
+        # Convert numpy types to Python types for psycopg2
+        chunk_ids_list = [int(x) for x in retrieved_chunk_ids]
+        pmc_id_str = str(expected_pmc_id)
 
-    result = db.execute(stmt, {
-        "chunk_ids": chunk_ids_list,
-        "expected_pmc_id": pmc_id_str
-    })
-    return result.scalar()
+        result = db.execute(stmt, {
+            "chunk_ids": chunk_ids_list,
+            "expected_pmc_id": pmc_id_str
+        })
+        return result.scalar()
+    finally:
+        db.close()
 
 
 def calculate_citation_validity(raw_llm_response: str, retrieved_chunk_ids: List[int]) -> float:
@@ -43,21 +46,24 @@ def calculate_citation_validity(raw_llm_response: str, retrieved_chunk_ids: List
 
     # Fetch source_ids (PMC IDs) for retrieved chunks from database
     db = next(get_db())
-    stmt = text("""
-        SELECT DISTINCT d.source_id
-        FROM document_chunks c
-        JOIN documents d ON c.document_id = d.document_id
-        WHERE c.document_chunk_id = ANY(:chunk_ids)
-    """)
-    # Convert numpy types to Python types for psycopg2
-    chunk_ids_list = [int(x) for x in retrieved_chunk_ids]
-    result = db.execute(stmt, {"chunk_ids": chunk_ids_list})
-    retrieved_pmc_ids = {row[0] for row in result}
+    try:
+        stmt = text("""
+            SELECT DISTINCT d.source_id
+            FROM document_chunks c
+            JOIN documents d ON c.document_id = d.document_id
+            WHERE c.document_chunk_id = ANY(:chunk_ids)
+        """)
+        # Convert numpy types to Python types for psycopg2
+        chunk_ids_list = [int(x) for x in retrieved_chunk_ids]
+        result = db.execute(stmt, {"chunk_ids": chunk_ids_list})
+        retrieved_pmc_ids = {row[0] for row in result}
 
-    # Count valid citations: cited PMCs that ARE in retrieved set
-    valid = sum(1 for pmc in unique_cited_pmcs if pmc in retrieved_pmc_ids)
+        # Count valid citations: cited PMCs that ARE in retrieved set
+        valid = sum(1 for pmc in unique_cited_pmcs if pmc in retrieved_pmc_ids)
 
-    return valid / len(unique_cited_pmcs)
+        return valid / len(unique_cited_pmcs)
+    finally:
+        db.close()
 
 
 def calculate_summary_stats(results: List[dict]) -> dict:

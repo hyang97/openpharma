@@ -5,6 +5,7 @@ Provides consistent logging across all modules.
 import logging
 import sys
 from pathlib import Path
+from logging.handlers import RotatingFileHandler
 
 
 def setup_logging(level: str = "INFO", log_file: str = None):
@@ -36,12 +37,17 @@ def setup_logging(level: str = "INFO", log_file: str = None):
     # Handlers list
     handlers = [console_handler]
 
-    # File handler (optional)
+    # File handler with rotation (optional)
     if log_file:
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        file_handler = logging.FileHandler(log_file)
+        # Rotate after 10MB, keep 5 backup files
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=5
+        )
         file_handler.setLevel(numeric_level)
         file_handler.setFormatter(detailed_formatter)
         handlers.append(file_handler)
