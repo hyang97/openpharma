@@ -83,25 +83,25 @@ Key technical decisions made during OpenPharma development.
 **Next Steps**: After friend feedback, upgrade to Cloud Run + Gemini for 8-10s responses using GCP credits.
 
 ## 2025-10-24: Postgres for Citation Data, Defer Graph Database to Phase 2
-**Problem**: Need to store NIH iCite citation data (12GB metadata + 4GB citation links) for landmark paper filtering and KOL identification.
-**Decision**: Import both iCite metadata and citation links into Postgres. Defer Neo4j/graph database to Phase 2.
+**Problem**: Need to store NIH iCite citation data (32GB metadata) for landmark paper filtering.
+**Decision**: Import iCite metadata into Postgres. Defer citation links and Neo4j/graph database to Phase 2.
 **Architecture**:
 ```sql
--- Phase 1: Postgres tables
-icite_metadata (12GB) - citation metrics, percentiles, paper metadata
-citation_links (12-18GB with indexes) - citation network edges
+-- Phase 1: Postgres table
+icite_metadata (32GB) - citation metrics, percentiles, paper metadata
 ```
 **Why Postgres**:
 - Already running, no new infrastructure
-- SQL queries handle Phase 1 KOL use cases (most cited authors, co-citations)
-- Citation links enable future graph analysis without requiring Neo4j now
-- 200GB disk space available, ~30GB total for iCite data is acceptable
+- SQL queries handle Phase 1 filtering use cases (landmark papers by citation percentile)
+- 200GB disk space available, ~32GB for iCite metadata is acceptable
 **Why Not Neo4j in Phase 1**:
-- Phase 1 queries don't need graph traversal (simple aggregations work in SQL)
+- Phase 1 queries don't need graph traversal (simple filtering works in SQL)
 - Graph RAG requires entity extraction and relationship modeling (5-7 weeks effort)
-- Can migrate citation data to Neo4j in Phase 2 if needed for advanced features
-**Phase 1 Capabilities**: Filter papers by citation percentile, identify most-cited authors, co-citation analysis (2-hop SQL queries)
-**Phase 2 Evaluation Criteria**: Consider Neo4j if building citation network visualizations, multi-hop traversals (3+ hops), or Graph RAG with knowledge graphs
+- Can import citation links and migrate to Neo4j in Phase 2 if needed for advanced features
+**Phase 1 Capabilities**: Filter papers by citation percentile (landmark paper discovery)
+**Phase 2 Evaluation Criteria**: Consider importing citation_links and Neo4j if building citation network visualizations, KOL identification, multi-hop traversals (3+ hops), or Graph RAG with knowledge graphs
+
+**UPDATE 2025-01-23**: Dropped `citation_links` table (870M rows, 81 GB) - imported but never used in Phase 1. Can be re-imported from NIH iCite snapshot if needed for Phase 2.
 **Tradeoff**: Deep graph queries (PageRank, community detection) will be slower in Postgres, but Phase 1 doesn't need them.
 
 ## 2025-10-26: Normalized citation data (JOIN) vs denormalized (duplicate columns)

@@ -333,19 +333,5 @@ class ICiteMetadata(Base):
         return f"<ICiteMetadata(pmid={self.pmid}, percentile={self.nih_percentile}, year={self.year})>"
 
 
-class CitationLink(Base):
-    """Citation network edges from NIH Open Citation Collection."""
-    __tablename__ = "citation_links"
-
-    # Composite primary key
-    citing = Column(BigInteger, primary_key=True)      # PMID of citing paper
-    referenced = Column(BigInteger, primary_key=True)  # PMID of referenced paper
-
-    # Indexes (created by migration script)
-    __table_args__ = (
-        Index('idx_citation_links_citing', 'citing'),
-        Index('idx_citation_links_cited', 'referenced'),
-    )
-
-    def __repr__(self):
-        return f"<CitationLink(citing={self.citing}, referenced={self.referenced})>"
+# CitationLink table dropped 2025-01-23 (81 GB, not used in Phase 1)
+# Can be re-imported from NIH iCite snapshot if needed for Phase 2 citation graph features

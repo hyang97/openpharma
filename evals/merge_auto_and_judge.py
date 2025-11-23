@@ -84,10 +84,27 @@ def merge_results(config: EvaluationConfig):
         merged_results.append(merged)
         metrics_rows.append(metrics_row)
 
-    # Create combined summary
+    # Calculate LLM judge summary from actual data (don't trust Gemini's arithmetic)
+    conclusion_match_correct = sum(1 for item in llm_judge['evaluations'] if item['conclusion_match'] == 'CORRECT')
+    reasoning_match_correct = sum(1 for item in llm_judge['evaluations'] if item['reasoning_match'] == 'CORRECT')
+    avg_faithfulness = sum(item['faithfulness'] for item in llm_judge['evaluations']) / len(llm_judge['evaluations']) if llm_judge['evaluations'] else 0
+    avg_relevance = sum(item['relevance'] for item in llm_judge['evaluations']) / len(llm_judge['evaluations']) if llm_judge['evaluations'] else 0
+    avg_precision = sum(item['precision'] for item in llm_judge['evaluations']) / len(llm_judge['evaluations']) if llm_judge['evaluations'] else 0
+    avg_recall = sum(item['recall'] for item in llm_judge['evaluations']) / len(llm_judge['evaluations']) if llm_judge['evaluations'] else 0
+
+    # Create combined summary with CORRECTED counts (not Gemini's miscounted summary)
     combined_summary = {
         **automated['summary'],
-        'llm_judge_evaluation': llm_judge['summary']
+        'llm_judge_evaluation': {
+            'conclusion_match_correct': conclusion_match_correct,
+            'reasoning_match_correct': reasoning_match_correct,
+            'avg_faithfulness': avg_faithfulness,
+            'avg_relevance': avg_relevance,
+            'avg_precision': avg_precision,
+            'avg_recall': avg_recall,
+            'key_findings': llm_judge['summary'].get('key_findings', ''),  # Keep Gemini's qualitative analysis
+            'recommendation': llm_judge['summary'].get('recommendation', '')  # Keep Gemini's recommendations
+        }
     }
 
     # Save complete results as JSON

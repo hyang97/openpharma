@@ -24,12 +24,12 @@ Citation metrics and metadata for all PubMed papers.
 - `year`: Publication year
 - `apt`: Approximate Potential to Translate (ML-based likelihood of clinical impact)
 
-### `citation_links` (870M rows, ~12-18GB)
-Citation network edges for co-citation analysis.
-
-**Schema**:
+### `citation_links` (DROPPED 2025-01-23)
+**Previous schema**: 870M citation network edges (81 GB)
 - `citing`: PMID of citing paper
 - `referenced`: PMID of referenced paper
+
+**Status**: Dropped - imported but never used in Phase 1. Can be re-imported from NIH iCite snapshot if needed for Phase 2 KOL/co-citation features.
 
 ## Use Cases
 
@@ -39,16 +39,21 @@ Citation network edges for co-citation analysis.
 3. **Priority assignment**: Set document priority based on citation metrics
 
 ### Phase 2 (Planned)
-- KOL identification via citation aggregation
-- Co-citation analysis for related papers
-- Citation enrichment in RAG responses
+- Re-import citation_links if needed for:
+  - KOL identification via citation aggregation
+  - Co-citation analysis for related papers
+- Citation enrichment in RAG responses (uses icite_metadata only)
 
 ## Import Status
 
-✅ **Complete** (2025-10-26)
-- `icite_metadata`: 39.4M rows imported
-- `citation_links`: 870M rows imported
-- Indexes: Created on `nih_percentile`, `year`, `citation_count`, `citing`, `referenced`
+✅ **icite_metadata** (2025-10-26)
+- 39.4M rows imported (32 GB)
+- Indexes: Created on `nih_percentile`, `year`, `citation_count`
+
+❌ **citation_links** (dropped 2025-01-23)
+- Previously: 870M rows imported (81 GB with indexes)
+- Reason: Not used in Phase 1, consumed 49% of database storage
+- Can be re-imported from NIH iCite snapshot if needed for Phase 2
 
 ## Field Definitions
 
