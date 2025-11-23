@@ -1,0 +1,7 @@
+{
+  "chunk_format": "[PMC{id}] Title: {title} | {content} | Journal: {journal}",
+  "literature_wrapper": "<Literature>...</Literature>",
+  "user_query_wrapper": "User Query: {message}",
+  "citation_cleaning": "Strip [digits] from original text",
+  "conversation_history": "Enabled"
+}

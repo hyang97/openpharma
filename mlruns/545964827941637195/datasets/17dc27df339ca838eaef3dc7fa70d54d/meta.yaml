@@ -1,0 +1,18 @@
+digest: cac7ceb7
+name: dataset
+profile: '{"num_rows": 194, "num_elements": 2910}'
+schema: '{"mlflow_colspec": [{"type": "string", "name": "question_id", "required":
+  true}, {"type": "long", "name": "pmid", "required": true}, {"type": "long", "name":
+  "pmc_id", "required": true}, {"type": "string", "name": "question", "required":
+  true}, {"type": "string", "name": "expected_answer", "required": true}, {"type":
+  "string", "name": "long_answer", "required": true}, {"type": "double", "name": "year",
+  "required": false}, {"type": "string", "name": "meshes", "required": true}, {"type":
+  "long", "name": "num_contexts", "required": true}, {"type": "string", "name": "answer",
+  "required": true}, {"type": "string", "name": "citations", "required": true}, {"type":
+  "array", "items": {"type": "long"}, "name": "retrieved_chunk_ids", "required": true},
+  {"type": "string", "name": "raw_llm_response", "required": true}, {"type": "double",
+  "name": "response_time_ms", "required": true}, {"type": "any", "name": "error",
+  "required": false}]}'
+source: '{"tags": {"mlflow.user": "root", "mlflow.source.name": "/app/evals/run_mlflow.py",
+  "mlflow.source.type": "LOCAL"}}'
+source_type: code

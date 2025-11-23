@@ -36,7 +36,7 @@ User interacts with OpenPharma through a clean, intuitive, two-panel interface, 
 
 **Implementation:** Diabetes research focus. Database contains 52,014 full-text articles for the keyword "diabetes" from PubMed Central from the last 5 years (1.89M chunks, 768d embeddings).
 
-**Status:** ✅ Phase 1 complete - deployed to production with full RAG system, Next.js UI, and mobile responsiveness. See `archive/TODO_completed_20251024.md` for full completion details.
+**Status:** ✅ Phase 1 complete - deployed to production with full RAG system, Next.js UI, mobile responsiveness, and MLFlow evaluation framework. See `archive/TODO_completed_20251028.md` for full completion details.
 
 #### Business Capabilities
 - **Core Use Case:** "What are the latest diabetes treatment efficacy results from clinical studies?"
@@ -187,11 +187,14 @@ Cloud Monitoring (observability)
    - Database self-hosted via Cloudflare Tunnel
    - Cost: ~$0/month for demo (all self-hosted)
 
-6. **Evaluation & Quality Assurance** ⏳ *(Planned)*
-   - RAGAS evaluation framework implementation (next priority)
-   - Citation accuracy measurement and tracking
-   - Response quality metrics and automated testing
-   - Performance benchmarking and optimization
+6. **Evaluation & Quality Assurance** ✅ *(Complete)*
+   - MLFlow evaluation framework with `mlflow.evaluate()` integration
+   - Automated metrics: retrieval accuracy, citation validity, response time
+   - LLM-as-judge metrics: conclusion match, reasoning match, RAGAS (faithfulness, relevance, precision, recall)
+   - Experiment tracking, prompt versioning, artifact logging
+   - PubMedQA golden dataset (194 expert-labeled questions)
+   - MLFlow UI for run comparison (http://127.0.0.1:5001)
+   - See `docs/40_evaluation_strategy.md` for complete framework
 
 #### Technical Details
 - **Document Processing:** 512-token chunks with 50-token overlap, section-based organization

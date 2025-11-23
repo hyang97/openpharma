@@ -84,6 +84,7 @@ def build_messages(user_message: str, chunks: list[SearchResult], conversation_h
                 'content': msg['content']
             })
 
+    # Old prompt (when using hybrid_retrieval with historical citations):
     # current_message = f"<Literature>\nBelow are the top {len(chunks)} most relevant literature passages to the user's query, as well as recently cited literature. Each passage starts with a unique [source_id].\n"
     current_message = f"<Literature>\nBelow are the top {len(chunks)} most relevant literature passages to the user's query. Each passage starts with a unique [source_id].\n"
     # Use top n chunks in context, no re-ranking
