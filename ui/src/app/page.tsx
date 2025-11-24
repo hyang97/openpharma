@@ -6,6 +6,7 @@ import { MessageList } from "@/components/MessageList"
 import { ChatInput } from "@/components/ChatInput"
 import { CitationList } from "@/components/CitationList"
 import { ConversationSidebar } from "@/components/ConversationSidebar"
+import { StatusIndicator } from "@/components/StatusIndicator"
 import { useChat } from "@/hooks/useChat"
 
 export default function Chat() {
@@ -56,9 +57,12 @@ export default function Chat() {
             </button>
 
             <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-4 text-white text-center" style={{ fontFamily: 'var(--font-noto-sans-jp)' }}>OpenPharma</h1>
-            <p className="text-base sm:text-lg mb-8 sm:mb-12 text-center leading-relaxed">
+            <p className="text-base sm:text-lg mb-4 text-center leading-relaxed">
               <span className="bg-accent text-white px-2 py-1 rounded" style={{ boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone' }}>Your on-demand pharmaceutical research analyst</span>
             </p>
+            <div className="mb-8 sm:mb-12">
+              <StatusIndicator apiUrl={API_URL} />
+            </div>
             <div className="w-full max-w-3xl">
               <ChatInput value={chat.input} onChange={chat.setInput} onSend={handleSend} centered={true} disabled={chat.isLoading(chat.currConversationId)} />
             </div>
@@ -69,11 +73,12 @@ export default function Chat() {
             <ChatHeader
               onReturnHome={handleReturnHome}
               onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+              apiUrl={API_URL}
             />
             {/* Send Error banner - fixed position, always visible */}
             {chat.hasSendError(chat.currConversationId) && (
               <div className="bg-red-900 text-red-200 p-3 flex justify-between items-center mx-4 sm:mx-6 mt-2 rounded">
-                <span>Previous message failed to send. Please try again.</span>
+                <span>Unable to reach backend. Please check that the API is running and try again.</span>
                 <button
                   onClick={() => chat.currConversationId && chat.clearLoading(chat.currConversationId)}
                   className="text-red-200 hover:text-white ml-4">×</button>
