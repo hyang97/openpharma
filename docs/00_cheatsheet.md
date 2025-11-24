@@ -20,6 +20,36 @@
 4. `ollama pull nomic-embed-text`
 5. Verify embeddings work: `curl -X POST http://localhost:11434/api/embeddings -d '{"model": "nomic-embed-text", "prompt": "test"}'`
 
+## Quick Start: Full Dev Environment
+
+### 1. Start Backend (Docker)
+```bash
+docker-compose up -d              # Start postgres + api containers
+docker-compose ps                 # Verify both containers running
+```
+
+### 2. Start Cloudflare Tunnel (Production Access)
+```bash
+cloudflared tunnel run openpharma-api  # Keep this terminal open
+# Test: curl https://api.byhenry.me/health
+```
+
+### 3. Start Frontend Dev Server
+```bash
+cd ui
+npm run dev              # Runs at http://localhost:3000
+# Production UI: https://openpharma.byhenry.me (Vercel-hosted)
+```
+
+### Shutdown
+```bash
+# Ctrl+C in tunnel terminal (or close terminal)
+docker-compose down      # Stop backend containers
+# Ctrl+C in ui terminal (or close terminal)
+```
+
+---
+
 ## Container Management
 ```bash
 docker-compose up -d              # Start containers (background)
@@ -30,7 +60,7 @@ docker-compose logs -f api        # Follow api logs (live)
 docker stop <container-name>      # Stop a specific container (e.g., api-fetch)
 ```
 
-## Quick Start
+## Development Tasks
 
 ### Backend (FastAPI)
 ```bash
