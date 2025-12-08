@@ -4,9 +4,10 @@ type ChatHeaderProps = {
   onReturnHome: () => void
   onToggleSidebar?: () => void
   apiUrl: string
+  isBackendActive?: boolean
 }
 
-export function ChatHeader({ onReturnHome, onToggleSidebar, apiUrl }: ChatHeaderProps) {
+export function ChatHeader({ onReturnHome, onToggleSidebar, apiUrl, isBackendActive }: ChatHeaderProps) {
   return (
     <div className="bg-slate-900 text-white py-3 md:py-4 px-4 shadow-sm border-b border-slate-700 sticky top-0 z-20">
       <div className="max-w-4xl mx-auto flex items-center justify-between gap-3 min-h-[40px]">
@@ -29,7 +30,7 @@ export function ChatHeader({ onReturnHome, onToggleSidebar, apiUrl }: ChatHeader
         </div>
 
         <div className="flex items-center gap-3">
-          <StatusIndicator apiUrl={apiUrl} />
+          <StatusIndicator apiUrl={apiUrl} isBackendActive={isBackendActive} />
           <button
             onClick={onReturnHome}
             className="px-3 py-1.5 md:px-4 md:py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-xs md:text-sm font-semibold transition-colors whitespace-nowrap flex-shrink-0 self-center"

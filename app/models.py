@@ -51,13 +51,14 @@ class Citation:
 @dataclass
 class Conversation:
     """
-    A single conversation with message history and citation tracking.
+    A single conversation with message history, citation tracking and user id.
 
     Messages format:
     - User: {"role": "user", "content": "..."}
     - Assistant: {"role": "assistant", "content": "...", "cited_source_ids": ["12345", ...], "cited_chunk_ids": ["5678", ...]}
     """
     conversation_id: str
+    user_id: str
     messages: List[dict] = field(default_factory=list)
     citation_mapping: Dict[str, int] = field(default_factory=dict)  # source_id -> citation_number
     conversation_citations: Dict[str, Citation] = field(default_factory=dict)  # source_id -> Citation

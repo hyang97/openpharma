@@ -74,6 +74,7 @@ app.add_middleware(
 
 class UserRequest(BaseModel):
     user_message: str = Field(..., max_length=10000, description="User's question (max 10,000 characters)")
+    user_id: str = Field(..., max_length=100, description="User's unique identifier (max 100 characters)")
     use_local: Optional[bool] = None
     conversation_id: Optional[str] = None
     use_reranker: bool = False
@@ -89,6 +90,13 @@ class UserRequest(BaseModel):
         # Strip HTML tags for XSS prevention
         v = re.sub(r'<[^>]+>', '', v)
         return v.strip()
+    
+    @validator('user_id')
+    def validate_user_id(cls, v):
+        # Alphanumeric with underscore/hyphen only (prevents injection)
+        if v and not re.match(r'^[a-zA-Z0-9_-]+$', v):
+            raise ValueError('user_id must be alphanumeric with _ or -')
+        return v
 
     @validator('conversation_id')
     def validate_conversation_id(cls, v):
@@ -159,15 +167,19 @@ async def health_check():
     return status
 
 @app.get("/conversations", response_model=List[ConversationSummaryResponse])
-async def get_all_conversation_summaries():
-    summaries = conversation_manager.get_conversation_summaries()
+async def get_all_conversation_summaries(user_id: str):
+    summaries = conversation_manager.get_conversation_summaries(user_id)
     return summaries
 
 @app.get("/conversations/{conversation_id}", response_model=ConversationDetailResponse)
-async def get_conversation_detail(conversation_id: str):
+async def get_conversation_detail(conversation_id: str, user_id: str):
     """Get full details for a specific conversation"""
-    c = conversation_manager.get_conversation(conversation_id)
+    c = conversation_manager.get_conversation(conversation_id, user_id)
     if not c:
+        # Check if conversation exists but user doesn't own it
+        existing_conv = conversation_manager.get_conversation(conversation_id)
+        if existing_conv:
+            raise HTTPException(status_code=403, detail="User doesn't own conversation")
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     # Get all citations for this conversation
@@ -191,7 +203,9 @@ async def get_conversation_detail(conversation_id: str):
 
 @app.post("/chat/stream")
 async def send_message_stream(request: UserRequest):
-    """Streams tokens via SSE (Server Sent Events), saves message after completion"""
+    """
+    Streams tokens via SSE (Server Sent Events), saves message after completion
+    """
 
     # Determine which model to use
     use_local = request.use_local if request.use_local is not None else os.getenv("USE_LOCAL_LLM", default="true").lower() == "true"
@@ -203,10 +217,15 @@ async def send_message_stream(request: UserRequest):
     conversation_id = request.conversation_id
     if not conversation_id:
         # No ID provided
-        conversation_id = conversation_manager.create_conversation()
-    elif not conversation_manager.get_conversation(conversation_id):
-        # ID provided, need to create new conversation
-        _ = conversation_manager.create_conversation(conversation_id)
+        conversation_id = conversation_manager.create_conversation(user_id=request.user_id)
+    elif not conversation_manager.get_conversation(conversation_id, request.user_id):
+        # ID provided but doesn't exist or user doesn't own it
+        # Check if it exists for another user (auth failure)
+        existing_conv = conversation_manager.get_conversation(conversation_id)
+        if existing_conv:
+            raise HTTPException(status_code=403, detail="User doesn't own conversation")
+        # Doesn't exist, create new conversation with provided ID
+        _ = conversation_manager.create_conversation(user_id=request.user_id, conversation_id=conversation_id)
 
     # Get conversation history for multi-turn support
     conversation_history = conversation_manager.get_messages(conversation_id)
@@ -282,11 +301,16 @@ async def send_message(request: UserRequest):
     conversation_id = request.conversation_id
     if not conversation_id:
         # No ID provided
-        conversation_id = conversation_manager.create_conversation()
-    elif not conversation_manager.get_conversation(conversation_id):
-        # ID provided, need to create new conversation
-        _ = conversation_manager.create_conversation(conversation_id)
-    
+        conversation_id = conversation_manager.create_conversation(user_id=request.user_id)
+    elif not conversation_manager.get_conversation(conversation_id, request.user_id):
+        # ID provided but doesn't exist or user doesn't own it
+        # Check if it exists for another user (auth failure)
+        existing_conv = conversation_manager.get_conversation(conversation_id)
+        if existing_conv:
+            raise HTTPException(status_code=403, detail="User doesn't own conversation")
+        # Doesn't exist, create new conversation with provided ID
+        _ = conversation_manager.create_conversation(user_id=request.user_id, conversation_id=conversation_id)
+
     # Get conversation history for multi-turn support
     conversation_history = conversation_manager.get_messages(conversation_id)
 

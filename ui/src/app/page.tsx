@@ -74,6 +74,7 @@ export default function Chat() {
               onReturnHome={handleReturnHome}
               onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
               apiUrl={API_URL}
+              isBackendActive={chat.isLoading(chat.currConversationId) || chat.isStreaming(chat.currConversationId)}
             />
             {/* Send Error banner - fixed position, always visible */}
             {chat.hasSendError(chat.currConversationId) && (
