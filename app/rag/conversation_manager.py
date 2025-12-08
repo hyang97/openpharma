@@ -26,8 +26,9 @@ class ConversationManager:
         self.conversations: Dict[str, Conversation] = {}
         self.max_age_seconds = max_age_seconds
 
-    def create_conversation(self, conversation_id: Optional[str] = None) -> str:
-        """Create a new conversation and return its UUID. Optionally except client-provided ID"""
+
+    def create_conversation(self, user_id: str, conversation_id: Optional[str] = None) -> str:
+        """Create a new conversation and return its UUID. Optionally accept client-provided ID"""
         self._run_cleanup_if_needed()
 
         c_id = conversation_id or str(uuid.uuid4())
@@ -36,18 +37,25 @@ class ConversationManager:
         if c_id in self.conversations:
             raise ValueError(f"Conversation {c_id} already exists")
 
-        c = Conversation(conversation_id=c_id)
+        c = Conversation(conversation_id=c_id, user_id=user_id)
         self.conversations[c_id] = c
         return c_id
 
-    def get_conversation(self, conversation_id: str) -> Optional[Conversation]:
-        """Retrieve conversation by ID, updating last_accessed. Returns None if not found."""
+
+    def get_conversation(self, conversation_id: str, user_id: Optional[str] = None) -> Optional[Conversation]:
+        """Retrieve conversation by ID, updating last_accessed. Returns None if not found or unauthorized."""
         if conversation_id not in self.conversations:
             return None 
-        else:
-            c = self.conversations.get(conversation_id, None)
-            c.last_accessed = time.time()
-            return c
+        
+        c = self.conversations.get(conversation_id, None)
+
+        # Ownership validation (if user_id provided)
+        if user_id is not None and c.user_id != user_id:
+            return None
+
+        c.last_accessed = time.time()
+        return c
+
 
     def get_messages(self, conversation_id: str) -> List[dict]:
         """Get message history. Returns empty list if conversation not found."""
@@ -55,6 +63,7 @@ class ConversationManager:
             return []
         else:
             return self.conversations.get(conversation_id).messages
+
 
     def add_message(
             self, 
@@ -81,6 +90,7 @@ class ConversationManager:
         c.last_accessed = time.time()
         self._run_cleanup_if_needed()
 
+
     def delete_last_message(self, conversation_id: str) -> Dict:
         """Delete the last message for rollback"""
         if conversation_id not in self.conversations:
@@ -94,10 +104,6 @@ class ConversationManager:
         c.last_accessed = time.time()
         return c.messages.pop()
         
-            
-                
-        
-
 
     def get_or_create_citation(self, conversation_id: str, chunk: SearchResult) -> Citation:
         """
@@ -143,6 +149,7 @@ class ConversationManager:
         c.last_accessed = time.time()
         return c.citation_mapping
     
+
     def get_all_citations(self, conversation_id: str) -> List[Citation]:
         """Return all Citation objects sorted by number."""
         if conversation_id not in self.conversations:
@@ -156,10 +163,15 @@ class ConversationManager:
         
         return all_citations
     
-    def get_conversation_summaries(self) -> List[dict]:
-        """Get all conversation summaries sorted by most recent."""
+
+    def get_conversation_summaries(self, user_id: str) -> List[dict]:
+        """Get all conversation summaries for a specific user, sorted by most recent."""
         summaries = []
         for c_id, convo in self.conversations.items():
+            # Filter by user_id
+            if convo.user_id != user_id:
+                continue
+            
             # Extracts first user message, with empty string if does not exist
             first_message = next((m["content"] for m in convo.messages if m["role"] == "user"), "")
 
@@ -174,6 +186,7 @@ class ConversationManager:
         summaries.sort(key=lambda x: x["last_updated"], reverse=True)
         return summaries
 
+
     def cleanup_old_conversations(self) -> int:
         """Remove stale conversations, return count removed."""
         current_time = time.time()
@@ -186,6 +199,7 @@ class ConversationManager:
             del self.conversations[c_id]
 
         return len(to_remove)
+
 
     def _run_cleanup_if_needed(self) -> None:
         """Run cleanup if over 100 conversations stored."""

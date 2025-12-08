@@ -1,25 +1,29 @@
 import { Message, Citation } from '@/types/message'
-import { useState, useEffect, useRef } from "react"
+import { useState, useRef } from "react"
 import { useLoadingState } from '@/hooks/useLoadingState'
 import { useConversationSummary } from './useConversationSummary'
 import { useConversationCache } from './useConversationCache'
+import { useAnonymousUser } from './useAnonymousUser'
 
 export function useChat(API_URL: string, useStreaming = false) {
+    // Hook: Get anonymous user ID
+    const userId = useAnonymousUser()
+
     // Hook: Fetch conversations from backend
-    const { 
-        allConversationSumm, 
-        setAllConversationSumm, fetchConversationSumm, addFirstMessageForConversationSumm 
-    } = useConversationSummary(API_URL)
-    
+    const {
+        allConversationSumm,
+        fetchConversationSumm, addFirstMessageForConversationSumm
+    } = useConversationSummary(API_URL, userId)
+
     // Hook: Maintain conversation cache
     const {
-        conversationCache, 
-        setConversationCache,  addMessageToCache, removeLastMessageFromCache 
+        conversationCache,
+        setConversationCache,  addMessageToCache, removeLastMessageFromCache
     } = useConversationCache()
-    
+
     // Hook: Manage loading state
     const {
-        loadingConversations, clearLoading,
+        clearLoading,
         setLoading, setStreaming, setUpdatingCitations, setSendError, setResumeError,
         isLoading, isStreaming, isUpdatingCitations, hasSendError, hasResumeError
     } = useLoadingState()
@@ -51,6 +55,7 @@ export function useChat(API_URL: string, useStreaming = false) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     user_message: user_input,
+                    user_id: userId,
                     conversation_id: requestConversationId,
                     use_reranker: true,
                     additional_chunks_per_doc: 20
@@ -224,6 +229,7 @@ export function useChat(API_URL: string, useStreaming = false) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 user_message: user_input,
+                user_id: userId,
                 use_local: true,
                 conversation_id: requestConversationId,
                 use_reranker: true,
@@ -239,7 +245,7 @@ export function useChat(API_URL: string, useStreaming = false) {
             clearLoading(requestConversationId)
 
             // Refetch full conversation for updating cache
-            return fetch(`${API_URL}/conversations/${requestConversationId}`, {
+            return fetch(`${API_URL}/conversations/${requestConversationId}?user_id=${userId}`, {
                 signal: AbortSignal.timeout(2 * 60 * 1000) // 2 minute timeout
             })
         })
@@ -368,7 +374,7 @@ export function useChat(API_URL: string, useStreaming = false) {
         }
 
         // Fetch from backend (always runs to ensure fresh data)
-        fetch(`${API_URL}/conversations/${conversationId}`, {
+        fetch(`${API_URL}/conversations/${conversationId}?user_id=${userId}`, {
             signal: AbortSignal.timeout(2 * 60 * 1000) // 2 minute timeout
         })
         .then(response => response.json())
