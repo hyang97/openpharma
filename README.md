@@ -1,10 +1,11 @@
 # OpenPharma
 
+
 > Your on-demand research analyst. Ask natural language questions about biomedical research and get AI-synthesized answers with verifiable citations from 110K+ papers.
 
-**Live Demo: [openpharma.byhenry.me](https://openpharma.byhenry.me)**
+**Try it: [openpharma.byhenry.me](https://openpharma.byhenry.me)**
 
-![Desktop conversation with citations](images/desktop_citations_v2.png)
+![Desktop view](images/desktop-home_v2.png)
 
 <details>
 <summary>Mobile views</summary>
@@ -29,6 +30,7 @@ Get synthesized answers backed by verifiable citations to specific PubMed Centra
 | **Papers** | 110K from PubMed Central (52K diabetes 2020-2025 + 58K high-impact historical) |
 | **Chunks** | 4.7M semantic chunks with 768d embeddings |
 | **LLM** | Claude Haiku 3 (default) with automatic Ollama Llama 3.1 8B fallback |
+| **Inference cost** | ~$0.01 every 5 responses via Claude Haiku 3, $0 via self-hosted Ollama Llama 3.1 8B |
 | **Embedding cost** | $0 via self-hosted Ollama nomic-embed-text |
 
 ## Tech Stack
