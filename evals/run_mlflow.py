@@ -63,6 +63,8 @@ class RAGEvaluator:
 
                 payload = {
                     "user_message": row['question'],
+                    'user_id': f"eval-{self.config.run_id}",
+                    'use_local': self.config.use_local,
                     "use_reranker": True,
                     "additional_chunks_per_doc": 20
                 }
@@ -206,6 +208,7 @@ def main():
     parser.add_argument("--experiment", required=True, help="Experiment name (e.g., baseline, reranking_test)")
     parser.add_argument("--run", required=True, help="Run identifier (e.g., v1, v2, v3)")
     parser.add_argument("--dataset", default="data/golden_eval_set.csv", help="Path to dataset CSV")
+    parser.add_argument("--use-api", action="store_true", help="Use API (Claude) instead of local model (Ollama)")
     parser.add_argument("--endpoint", default="http://localhost:8000/chat", help="RAG endpoint URL")
     parser.add_argument("--limit", type=int, help="Limit number of questions")
 
@@ -214,6 +217,7 @@ def main():
     config = EvaluationConfig(
         experiment_name=args.experiment,
         run_id=args.run,
+        use_local=not args.use_api,
         dataset_path=args.dataset,
         rag_endpoint=args.endpoint,
         limit=args.limit
@@ -246,11 +250,14 @@ def main():
         mlflow.log_param("run_id", config.run_id)
         mlflow.log_param("dataset", config.dataset_path)
         mlflow.log_param("endpoint", config.rag_endpoint)
-        mlflow.log_param("model", os.getenv("OLLAMA_MODEL", "llama3.1:8b"))
         mlflow.log_param("reranker", os.getenv("RERANKER_MODEL", "none"))
         mlflow.log_param("prompt_version", "v1.0")  # TODO: Make this configurable
         if config.limit:
             mlflow.log_param("limit", config.limit)
+        if config.use_local:
+            mlflow.log_param("model", os.getenv("OLLAMA_MODEL", "llama3.1:8b"))
+        else:
+            mlflow.log_param("model", os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307"))
 
         # Log system prompt
         mlflow.log_text(SYSTEM_PROMPT, "system_prompt.txt")

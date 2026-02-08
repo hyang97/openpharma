@@ -37,6 +37,7 @@ class EvaluationConfig:
     """Evaluation run configuration."""
     experiment_name: str
     run_id: str
+    use_local: bool = True
     dataset_path: str = "data/golden_eval_set.csv"
     rag_endpoint: str = "http://localhost:8000/chat"
     limit: Optional[int] = None

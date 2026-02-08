@@ -96,6 +96,17 @@ def prepare_messages_for_display(messages: List[dict], conversation_id: str, con
                 # Uses lookahead to match PMC ID followed by comma, space, or closing bracket
                 pattern = r'PMC' + source_id + r'(?=\s*[,\]])'
                 content = re.sub(pattern, str(number), content)
+            
+            # Safety net: strip any remaining bare number brackets that leaked from source papers
+            # Matches: [1], [2,3], [3-5], [6-11], [1,3-5,8]
+            # Keeps brackets containing valid citation numbers, strips the rest
+            valid_numbers = set(str(n) for n in pmc_to_number.values())
+            def strip_invalid_citation(match):
+                nums_in_bracket = re.findall(r'\d+', match.group(0))
+                if any(n in valid_numbers for n in nums_in_bracket):
+                    return match.group(0)
+                return ''
+            content = re.sub(r'\[[\d,\s\-]+\]', strip_invalid_citation, content)
 
             prepared_messages.append({
                 'role': msg['role'],
