@@ -1,39 +1,42 @@
 # OpenPharma
 
-> Your on-demand pharmaceutical research analyst. Transform multi-day literature reviews into minutes. Ask natural language questions about diabetes research and get AI-synthesized answers with verifiable citations from 110K+ research papers.
+> Your on-demand research analyst. Ask natural language questions about biomedical research and get AI-synthesized answers with verifiable citations from 110K+ papers.
 
-## Live Demo: [openpharma.byhenry.me](https://openpharma.byhenry.me)
+**Live Demo: [openpharma.byhenry.me](https://openpharma.byhenry.me)**
 
-![OpenPharma home screen](images/desktop-home.png)
+![Desktop conversation with citations](images/desktop_citations_v2.png)
 
-### Chat in Browser
-![Desktop conversation view](images/desktop-convo.png)
+<details>
+<summary>Mobile views</summary>
 
-### Chat on Mobile
-<img src="images/mobile-convo.png" alt="Mobile conversation view" width="300">
+<img src="images/mobile-home_v2.png" alt="Mobile home" width="300"> <img src="images/mobile-convo_v2.png" alt="Mobile conversation" width="300">
+
+</details>
 
 ## What It Does
 
 Ask questions a pharma competitive intelligence analyst would ask:
-- "What is the latest evidence on SGLT2 inhibitors for cardiovascular and renal protection in type 2 diabetes?"
-- "How do DPP-4 inhibitors compare to sulfonylureas in efficacy and safety for newly diagnosed type 2 diabetes?"
+- "What mechanisms of resistance to immune checkpoint inhibitors have been identified in cancer research?"
 - "What neuroprotective mechanisms have been proposed for metformin in recent studies?"
+- "What are the emerging approaches to combat antimicrobial resistance?"
 
-Get synthesized answers backed by verifiable citations to specific papers, sections, and passages.
+Get synthesized answers backed by verifiable citations to specific PubMed Central papers.
 
 ## System Stats
 
-- **110K papers** from PubMed Central (52K diabetes 2020-2025 + 58K high-impact historical)
-- **4.7M semantic chunks** with 768-dimensional embeddings
-- **165 GB database** including full papers and NIH citation metadata
-- **<$50 total cost** via self-hosted Ollama (embeddings + LLM)
+| | |
+|---|---|
+| **Papers** | 110K from PubMed Central (52K diabetes 2020-2025 + 58K high-impact historical) |
+| **Chunks** | 4.7M semantic chunks with 768d embeddings |
+| **LLM** | Claude Haiku 3 (default) with automatic Ollama Llama 3.1 8B fallback |
+| **Embedding cost** | $0 via self-hosted Ollama nomic-embed-text |
 
 ## Tech Stack
 
-**Backend:** FastAPI, PostgreSQL + pgvector, Ollama / Claude API (configurable)
+**Backend:** FastAPI, PostgreSQL + pgvector, Claude API (default) / Ollama (fallback)
 **Frontend:** Next.js 15, TypeScript, Tailwind CSS
-**Evaluation:** MLFlow, PubMedQA golden dataset, automated metrics + LLM-as-judge
-**Pipeline:** 4-stage ingestion (collect, fetch, chunk, embed)
+**Evaluation:** MLFlow, PubMedQA golden dataset (194 questions), automated metrics + LLM-as-judge
+**Pipeline:** 4-stage ingestion (collect, fetch, chunk, embed), self-hosted embeddings
 
 ## Architecture
 
@@ -44,9 +47,11 @@ Semantic Search (pgvector HNSW) --> 4.7M chunks
     |
 Cross-Encoder Reranking (ms-marco-MiniLM-L-6-v2)
     |
-LLM Generation (Llama 3.1 8B / Claude Haiku 3)
+LLM Generation (Claude Haiku 3, Ollama fallback)
     |
-Cited Answer + Source Papers
+Citation Extraction & Numbering
+    |
+Cited Answer + Linked PMC Sources
 ```
 
 ## Evaluation: Llama 3.1 8B vs Claude Haiku 3
@@ -64,25 +69,24 @@ Both models evaluated on 194 expert-labeled PubMedQA questions using identical r
 
 **Key findings:**
 
-- **Response time:** Claude Haiku is 5.7x faster (6.8s vs 38.6s), shifting the bottleneck from LLM generation to retrieval.
-- **Reasoning quality:** Modest gains (+2% conclusion, +0.5% reasoning). For well-structured RAG with strong prompts, retrieval quality matters more than model size.
-- **Citation discipline:** Llama 3.1 8B scores higher on citation validity (98.2% vs 91.2%) and faithfulness (4.8 vs 4.4), suggesting the smaller model is more disciplined about citing only from provided context.
-- **Implication:** The RAG pipeline and prompt engineering are the primary drivers of answer quality, not the LLM. This validates investing in retrieval improvements over model upgrades.
+- **Response time:** Claude is 5.7x faster (6.8s vs 38.6s), shifting the bottleneck from LLM generation to retrieval.
+- **Reasoning quality:** Modest gains (+2% conclusion, +0.5% reasoning). With strong retrieval and prompts, model choice matters less than pipeline quality.
+- **Citation discipline:** The smaller local model scores higher on citation validity (98.2% vs 91.2%) and faithfulness (4.8 vs 4.4), staying more strictly within provided context.
+- **Implication:** RAG pipeline and prompt engineering are the primary drivers of answer quality, not the LLM. This validates investing in retrieval improvements over model upgrades.
 
-Evaluation tracked via MLFlow with experiment comparison, prompt versioning, and artifact logging. See [docs/40_evaluation_strategy.md](docs/40_evaluation_strategy.md) for the full framework.
+Evaluation tracked via MLFlow with experiment comparison, prompt versioning, and artifact logging. See [docs/40_evaluation_strategy.md](docs/40_evaluation_strategy.md).
 
-## Key Technical Decisions
+## Key Design Decisions
 
-- **Self-hosted Ollama:** Reduced embedding costs from $500+ to $0
-- **NIH iCite citation filtering:** 95th percentile filter reduced 2.6M candidate papers to 58K high-impact historical papers
+- **Self-hosted embeddings:** Ollama nomic-embed-text reduced embedding cost from $500+ to $0 for 4.7M chunks
+- **NIH iCite citation filtering:** 95th percentile filter reduced 2.6M candidate papers to 58K high-impact historical
 - **Section-aware chunking:** Preserves paper structure (abstract, methods, results) for accurate citations
-- **Cross-encoder reranking:** Improves retrieval quality with minimal latency cost (~0.8s)
-- **Dual LLM support:** Configurable Ollama (local, $0) or Claude API (cloud, fast) with a single environment variable
+- **Cross-encoder reranking:** ms-marco-MiniLM improves retrieval precision with ~0.8s latency cost
+- **Automatic LLM fallback:** Claude API by default, seamless fallback to local Ollama if API is unavailable
+- **Anonymous sessions:** localStorage-based user sessions with conversation isolation and ownership validation
 
-## More Info
-
-See [docs/](docs/) for detailed design decisions, architecture, and implementation.
+See [docs/](docs/) for detailed architecture and design decisions.
 
 ---
 
-**Note:** This is a personal learning project. Not for clinical or professional use.
+*Personal learning project. Not for clinical or professional use.*

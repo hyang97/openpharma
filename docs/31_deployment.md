@@ -59,15 +59,16 @@ OLLAMA_BASE_URL=http://host.docker.internal:11434
 **Phase 1 Demo**:
 ```bash
 DATABASE_URL=postgresql://admin:password@localhost:5432/openpharma
-USE_LOCAL_LLM=true
+USE_LOCAL_LLM=false
 OLLAMA_BASE_URL=http://localhost:11434
+ANTHROPIC_API_KEY=<your-key>
 ```
 
 **Phase 2 Cloud**:
 ```bash
 DATABASE_URL=postgresql://user:pass@<cloud-sql-ip>:5432/openpharma
 USE_LOCAL_LLM=false
-OPENAI_API_KEY=<your-key>
+ANTHROPIC_API_KEY=<your-key>
 ```
 
 ## Health Checks

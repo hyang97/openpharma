@@ -28,15 +28,13 @@ User interacts with OpenPharma through a clean, intuitive, two-panel interface, 
 
 ---
 
-
-
 ## 2. Development Plan
 
 ### **Phase 1: Research Literature Intelligence MVP (COMPLETE)**
 
 **Implementation:** Diabetes research focus. Database contains 52,014 full-text articles for the keyword "diabetes" from PubMed Central from the last 5 years (1.89M chunks, 768d embeddings).
 
-**Status:** ✅ Phase 1 complete - deployed to production with full RAG system, Next.js UI, mobile responsiveness, and MLFlow evaluation framework. See `archive/TODO_completed_20251028.md` for full completion details.
+**Status:** Phase 1 complete - deployed to production with full RAG system, Next.js UI, mobile responsiveness, and MLFlow evaluation framework. See `archive/TODO_completed_20251028.md` for full completion details.
 
 #### Business Capabilities
 - **Core Use Case:** "What are the latest diabetes treatment efficacy results from clinical studies?"
@@ -122,7 +120,7 @@ Next.js/React (UI)
     ↓
 FastAPI (REST API)
     ↓
-    ├→ Ollama Llama 3.1 8B / OpenAI GPT-4 (LLM reasoning - configurable)
+    ├→ Ollama Llama 3.1 8B / Claude Haiku 3
     ├→ Ollama nomic-embed-text (semantic search - 768d, self-hosted, $0 cost)
     └→ Local Postgres + pgvector (vector store)
 
@@ -137,7 +135,7 @@ Cloud Monitoring (observability)
 | **API Backend** | FastAPI | Industry standard for ML APIs, async support |
 | **UI** | Next.js 15 + React + TypeScript | Production-ready, modern web stack |
 | **Styling** | Tailwind CSS | Rapid UI development, dark theme support |
-| **LLM** | Ollama Llama 3.1 8B / OpenAI GPT-4 | Local development / Demo quality (configurable) |
+| **LLM** | Ollama Llama 3.1 8B / Claude Haiku 3 | Local development / Demo quality (configurable) |
 | **Embeddings** | Ollama nomic-embed-text | 768 dims, self-hosted, $0 cost |
 | **Vector Store** | Local Postgres + pgvector | Simple, cost-effective, fully local development |
 | **Containerization** | Docker + Docker Compose | Local development, Cloud Run deployment |
@@ -210,7 +208,7 @@ Cloud Monitoring (observability)
   - See `docs/data_design.md` for complete schema documentation
 - **Retrieval:** Top-20 semantic nearest neighbors via cosine similarity
 - **Development Cost:** $0/month (local Ollama + local Postgres)
-- **Demo Cost:** $5-15/month (OpenAI GPT-4 calls when needed)
+- **Demo Cost:** $5/month (Claude Haiku 3 calls when needed)
 - **Embedding Cost:** $0 (self-hosted Ollama)
 - **GCP Credit Strategy:** Leverage free tiers (Cloud Run 2M requests, Cloud SQL shared-core)
 
@@ -222,7 +220,7 @@ Cloud Monitoring (observability)
 
 #### Hybrid Development Strategy
 - **Local Development:** Docker Compose (Postgres + FastAPI + Streamlit)
-- **LLM Flexibility:** Environment variable to switch Ollama ↔ OpenAI GPT-4
+- **LLM Flexibility:** Environment variable to switch Ollama ↔ Claude Haiku 3
 - **Embeddings:** Ollama nomic-embed-text (self-hosted, free, 768d)
 - **Cloud Deployment:** GCP Cloud Run for portfolio demos only
 - **Cost Optimization:** 95% development local ($0), 5% demos with GPT-4 ($5-15/month)
@@ -262,7 +260,7 @@ Next.js/React (production UI)
     ↓
 FastAPI + LangChain/LangGraph (agent orchestration)
     ↓
-    ├→ OpenAI GPT-4 (LLM)
+    ├→ Claude Haiku 3 (LLM)
     ├→ MCP (Model Context Protocol - tool integration)
     ├→ Cloud SQL: Postgres + pgvector (vectors)
     └→ Postgres JSONB (structured relationships)
@@ -322,7 +320,7 @@ Cloud Monitoring (production observability)
 - **Relationship Schema:** Papers ↔ Trials ↔ Drugs ↔ Companies (Postgres JSONB, not Neo4j in Phase 2)
 - **Agent Types:** ReAct, Plan-and-Execute, Multi-agent collaboration
 - **Neo4j Migration:** Optional Phase 3 upgrade if graph complexity warrants dedicated graph DB
-- **Monthly Cost:** $150-400 (multiple data sources + OpenAI API calls)
+- **Monthly Cost:** $150-400 (multiple data sources + Anthropic API calls)
 
 ---
 
