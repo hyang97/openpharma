@@ -48,7 +48,7 @@ export function ChatInput({ value, onChange, onSend, centered = false, disabled 
       </div>
 
       {/* Disclaimer */}
-      <p className="text-center text-[10px] sm:text-xs text-slate-500 mt-2 sm:mt-3 px-2 italic">
+      <p className="text-center text-[10px] sm:text-xs text-slate-500 mt-1 sm:mt-2 px-2 italic">
         This is currently a personal learning project, use information at personal and professional risk. Enjoy and have fun!
       </p>
     </div>

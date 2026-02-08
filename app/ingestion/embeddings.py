@@ -8,7 +8,6 @@ import json
 import time
 from pathlib import Path
 import requests
-from openai import OpenAI
 import logging
 
 logger = logging.getLogger(__name__)

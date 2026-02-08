@@ -19,11 +19,10 @@ services:
       - USE_LOCAL_LLM=${USE_LOCAL_LLM}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
       - OLLAMA_MODEL=${OLLAMA_MODEL}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL}
       - RERANKER_MODEL=${RERANKER_MODEL}
-      - LOG_LEVEL=DEBUG
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       # Mount only backend code (exclude ui/, venv/, node_modules/)
       - ./app:/app/app

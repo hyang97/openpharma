@@ -21,7 +21,7 @@ const notoSansJP = Noto_Sans_JP({
 
 export const metadata: Metadata = {
   title: "OpenPharma - AI-Powered Pharmaceutical Research",
-  description: "Your on-demand pharmaceutical research analyst",
+  description: "Your on-demand research analyst",
 };
 
 export default function RootLayout({
