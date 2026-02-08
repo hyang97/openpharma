@@ -473,9 +473,9 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 **Backend (`docker-compose.yml`):**
 ```
-USE_LOCAL=true                    # true: Ollama, false: OpenAI
+USE_LOCAL=true                    # true: Ollama, false: Claude API
 RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
-OPENAI_API_KEY=sk-...             # Required if USE_LOCAL=false
+ANTHROPIC_API_KEY=sk-...          # Required if USE_LOCAL=false
 ```
 
 ### API Endpoints

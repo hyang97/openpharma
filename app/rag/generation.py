@@ -134,7 +134,6 @@ async def generate_response_stream(
 
     # Create token_iter based on local vs. api llm
     if use_local:
-        # Start Ollama streaming
         client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
         raw_stream = client.chat(model=OLLAMA_MODEL, messages=messages, stream=True, options={'keep_alive': -1})
         def token_iter():
@@ -143,17 +142,26 @@ async def generate_response_stream(
                 if token:
                     yield token
     else:
-        # Start Anthropic streaming
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        system_prompt, chat_messages = _extract_system_message(messages)
+        # Anthropic streaming with Ollama fallback
         def token_iter():
-            with client.messages.stream(
-                model=ANTHROPIC_MODEL,
-                max_tokens=4096,
-                system=system_prompt,
-                messages=chat_messages
-            ) as stream:
-                yield from stream.text_stream
+            try:
+                client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+                system_prompt, chat_messages = _extract_system_message(messages)
+                with client.messages.stream(
+                    model=ANTHROPIC_MODEL,
+                    max_tokens=4096,
+                    system=system_prompt,
+                    messages=chat_messages
+                ) as stream:
+                    yield from stream.text_stream
+            except Exception as e:
+                logger.warning(f"Anthropic API failed, falling back to Ollama: {e}")
+                client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+                raw_stream = client.chat(model=OLLAMA_MODEL, messages=messages, stream=True, options={'keep_alive': -1})
+                for chunk in raw_stream:
+                    token = chunk.get('message', {}).get('content')
+                    if token:
+                        yield token
 
     # Stores initial tokens in string, waiting to hit ## Answer
     preamble_buffer = ""
@@ -241,21 +249,9 @@ def generate_response(
     messages = build_messages(user_message, chunks, conversation_history)
     logger.debug(f"Messages:\n{messages}\n")
 
-    # Call LLM
-    try:
-        if use_local:
-            llm_start = time.time()
-            logger.info(f"Using model: {OLLAMA_MODEL}")
-            client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", default="http://localhost:11434"))
-            response = client.chat(
-                model=OLLAMA_MODEL,
-                messages=messages,
-                options={'keep_alive': -1}
-            )
-            llm_time = (time.time() - llm_start) * 1000
-            logger.info(f"LLM generation time: {llm_time:.0f}ms")
-            return response['message']['content']
-        else:
+    # Call LLM (try Anthropic first if not local, fall back to Ollama on failure)
+    if not use_local:
+        try:
             llm_start = time.time()
             logger.info(f"Using model: {ANTHROPIC_MODEL}")
             client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -269,7 +265,21 @@ def generate_response(
             llm_time = (time.time() - llm_start) * 1000
             logger.info(f"LLM generation time: {llm_time:.0f}ms")
             return response.content[0].text
+        except Exception as e:
+            logger.warning(f"Anthropic API failed, falling back to Ollama: {e}")
 
+    try:
+        llm_start = time.time()
+        logger.info(f"Using model: {OLLAMA_MODEL}")
+        client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", default="http://localhost:11434"))
+        response = client.chat(
+            model=OLLAMA_MODEL,
+            messages=messages,
+            options={'keep_alive': -1}
+        )
+        llm_time = (time.time() - llm_start) * 1000
+        logger.info(f"LLM generation time: {llm_time:.0f}ms")
+        return response['message']['content']
     except Exception as e:
         logger.error(f"Error generating response: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")

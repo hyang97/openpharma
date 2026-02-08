@@ -44,7 +44,7 @@ export function SuggestedQuestions({ onSelectQuestion }: SuggestedQuestionsProps
           className="inline-block text-xs transition-transform duration-300"
           style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
         >
-          &#9660;
+          &#9660;&#xFE0E;
         </span>
       </button>
 
@@ -70,7 +70,7 @@ export function SuggestedQuestions({ onSelectQuestion }: SuggestedQuestionsProps
               >
                 {question}
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
-                  &#8599;
+                  &#8599;&#xFE0E;
                 </span>
               </button>
             ))}

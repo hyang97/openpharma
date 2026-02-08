@@ -36,7 +36,7 @@ See `.env.example` for all available configuration options.
 
 **Critical Variables**:
 - `DATABASE_URL` - Postgres connection string
-- `USE_LOCAL_LLM` - Toggle between Ollama (true) and OpenAI (false)
+- `USE_LOCAL_LLM` - Toggle between Ollama (true) and Claude API (false)
 - `OLLAMA_BASE_URL` - Ollama API endpoint (default: http://host.docker.internal:11434)
 - `RERANKER_MODEL` - Cross-encoder model for reranking (default: cross-encoder/ms-marco-MiniLM-L-6-v2)
 

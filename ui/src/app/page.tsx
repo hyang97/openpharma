@@ -64,7 +64,7 @@ export default function Chat() {
 
             <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-4 text-white text-center" style={{ fontFamily: 'var(--font-noto-sans-jp)' }}>OpenPharma</h1>
             <p className="text-base sm:text-lg mb-4 text-center leading-relaxed">
-              <span className="bg-accent text-white px-2 py-1 rounded" style={{ boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone' }}>Your on-demand pharmaceutical research analyst</span>
+              <span className="bg-accent text-white px-2 py-1 rounded" style={{ boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone' }}>Your on-demand research analyst</span>
             </p>
             <div className="mb-8 sm:mb-12">
               <StatusIndicator apiUrl={API_URL} />

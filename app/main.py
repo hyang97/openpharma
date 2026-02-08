@@ -130,24 +130,10 @@ class ChatResponse(BaseModel):
     generation_time_ms: float
     conversation_id: str
 
-def check_ollama_version():
-    """Verify Ollama 0.11.x (0.12.5 has EOF bug)."""
-    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    try:
-        version = requests.get(f"{ollama_url}/api/version", timeout=5).json()["version"]
-        major, minor = map(int, version.split(".")[:2])
-        if major == 0 and minor == 11:
-            logger.info(f"Ollama {version} ✓")
-            return
-        raise RuntimeError(f"Ollama {version} unsupported. Need 0.11.x")
-    except Exception as e:
-        logger.warning(f"Ollama version check failed: {e}")
-
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting OpenPharma API")
-    logger.info(f"Using local LLM: {os.getenv('USE_LOCAL_LLM', 'true')}")
-    check_ollama_version()
+    logger.info(f"Using local LLM: {os.getenv('USE_LOCAL_LLM', 'false')}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -208,7 +194,7 @@ async def send_message_stream(request: UserRequest):
     """
 
     # Determine which model to use
-    use_local = request.use_local if request.use_local is not None else os.getenv("USE_LOCAL_LLM", default="true").lower() == "true"
+    use_local = request.use_local if request.use_local is not None else os.getenv("USE_LOCAL_LLM", default="false").lower() == "true"
 
     logger.info(f"Received question: {request.user_message[:100]}...")
     logger.debug(f"Using local model: {use_local}")
@@ -292,7 +278,7 @@ async def send_message(request: UserRequest):
     """Send a message and get an AI response with citations"""
 
     # Determine which model to use
-    use_local = request.use_local if request.use_local is not None else os.getenv("USE_LOCAL_LLM", default="true").lower() == "true"
+    use_local = request.use_local if request.use_local is not None else os.getenv("USE_LOCAL_LLM", default="false").lower() == "true"
 
     logger.info(f"Received question: {request.user_message[:100]}...")
     logger.debug(f"Using local model: {use_local}")
