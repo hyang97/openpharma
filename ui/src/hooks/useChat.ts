@@ -288,9 +288,11 @@ export function useChat(API_URL: string, useStreaming = false) {
 
     }
 
-    const processMessage = (useStreamingOverride?: boolean) => {
+    const processMessage = (useStreamingOverride?: boolean, directMessage?: string) => {
+        const messageText = directMessage || input
+
         // Don't send message if empty input or current loading conversation 
-        if (input.trim() === '' || isLoading(currConversationId)) return 
+        if (messageText.trim() === '' || isLoading(currConversationId)) return 
 
         // Determine streaming mode (parameter overrides hook default)
         const shouldStream = useStreamingOverride ?? useStreaming
@@ -299,7 +301,7 @@ export function useChat(API_URL: string, useStreaming = false) {
         const isFirstMessage = messages.length === 0 && window.innerWidth < 768
 
         // Save user input and clear input 
-        const user_input = input 
+        const user_input = messageText 
         setInput('')
 
         // Add user message to messages array, and also empty assistant message if streaming

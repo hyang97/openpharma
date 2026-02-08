@@ -5,10 +5,8 @@ Takes search results and generates synthesized answers with citations.
 """
 from fastapi import HTTPException
 from typing import List, Optional
-import time
-import os
-import re
-import ollama
+import time, os, re
+import ollama, anthropic
 
 from app.models import SearchResult
 from app.logging_config import get_logger
@@ -18,6 +16,7 @@ logger = get_logger(__name__)
 
 # Model configuration - change this to experiment with different models
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
 
 # Number of tokens to lookahead for ## References
 LOOKAHEAD_LENGTH = 5
@@ -70,6 +69,18 @@ Notes:
 </Incorrect Examples>"
 """
 
+def _extract_system_message(messages: List[dict]) -> tuple[str, List[dict]]:
+    """For Anthropic API, extract system messages from message list"""
+    system_message = ""
+    chat_messages = []
+    for msg in messages:
+        if msg['role'] == 'system':
+            system_message = msg['content']
+        else:
+            chat_messages.append(msg)
+    return system_message, chat_messages
+
+
 
 def build_messages(user_message: str, chunks: list[SearchResult], conversation_history: Optional[List[dict]]) -> List[dict]:
     """Build RAG prompt with user message, context, and literature chunks."""
@@ -84,15 +95,17 @@ def build_messages(user_message: str, chunks: list[SearchResult], conversation_h
                 'content': msg['content']
             })
 
-    # Old prompt (when using hybrid_retrieval with historical citations):
+    # Old prompt (when using hybrid_retrieval with historical citations)
     # current_message = f"<Literature>\nBelow are the top {len(chunks)} most relevant literature passages to the user's query, as well as recently cited literature. Each passage starts with a unique [source_id].\n"
+    
     current_message = f"<Literature>\nBelow are the top {len(chunks)} most relevant literature passages to the user's query. Each passage starts with a unique [source_id].\n"
+    
     # Use top n chunks in context, no re-ranking
     # Add to prompt with numbered chunks, formatted for inline citations [x]
-    
     for idx, chunk in enumerate(chunks, 1):
-        # Strip citation markers [1], [2, 3], etc. from original paper text
-        cleaned_content = re.sub(r'\[\d+(?:,\s*\d+)*\]', '', chunk.content)
+        # Strip paper reference numbers to prevent LLM from copying them into response
+        # Matches: [1], [2,3], [3-5], [6-11], [1,3-5,8]
+        cleaned_content = re.sub(r'\[[\d,\s\-]+\]', '', chunk.content)
         current_message += f"[PMC{chunk.source_id}] Title: {chunk.title} | {cleaned_content} | Journal: {chunk.journal}\n"
 
     current_message += f"</Literature>\nUser Query: {user_message}"
@@ -115,18 +128,32 @@ async def generate_response_stream(
         dict: {"type": "token", "content": "..."}
         dict: {"type": "end_of_response", "full_response": "..."}
     """
-    if not use_local:
-        # TODO: Add OpenAI integration later
-        logger.warning("OpenAI integration requested but not implemented")
-        yield {"type": "error", "message": "OpenAI streaming not yet implemented"}
-        return
 
     # Build messages
     messages = build_messages(user_message, chunks, conversation_history)
 
-    # Start Ollama streaming
-    client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
-    stream = client.chat(model=OLLAMA_MODEL, messages=messages, stream=True, options={'keep_alive': -1})
+    # Create token_iter based on local vs. api llm
+    if use_local:
+        # Start Ollama streaming
+        client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+        raw_stream = client.chat(model=OLLAMA_MODEL, messages=messages, stream=True, options={'keep_alive': -1})
+        def token_iter():
+            for chunk in raw_stream:
+                token = chunk.get('message', {}).get('content')
+                if token:
+                    yield token
+    else:
+        # Start Anthropic streaming
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        system_prompt, chat_messages = _extract_system_message(messages)
+        def token_iter():
+            with client.messages.stream(
+                model=ANTHROPIC_MODEL,
+                max_tokens=4096,
+                system=system_prompt,
+                messages=chat_messages
+            ) as stream:
+                yield from stream.text_stream
 
     # Stores initial tokens in string, waiting to hit ## Answer
     preamble_buffer = ""
@@ -140,13 +167,8 @@ async def generate_response_stream(
     full_response = ""
     token_count = 0
 
-    for chunk in stream:
-        # Skip empty/missing content
-        if not chunk.get('message', {}).get('content'):
-            continue 
-
-        # Extract token from Ollama response
-        token = chunk['message']['content']
+    for token in token_iter():
+        
         preamble_buffer += token 
         full_response += token 
         token_count += 1
@@ -234,13 +256,23 @@ def generate_response(
             logger.info(f"LLM generation time: {llm_time:.0f}ms")
             return response['message']['content']
         else:
-            # TODO: Add OpenAI integration later
-            logger.warning("OpenAI integration requested but not implemented")
-            raise HTTPException(status_code=501, detail="OpenAI integration not yet implemented")
+            llm_start = time.time()
+            logger.info(f"Using model: {ANTHROPIC_MODEL}")
+            client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+            system_prompt, chat_messages = _extract_system_message(messages)
+            response = client.messages.create(
+                model=ANTHROPIC_MODEL,
+                max_tokens=4096,
+                system=system_prompt,
+                messages=chat_messages,
+            )
+            llm_time = (time.time() - llm_start) * 1000
+            logger.info(f"LLM generation time: {llm_time:.0f}ms")
+            return response.content[0].text
+
     except Exception as e:
         logger.error(f"Error generating response: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
-
 
 
 if __name__ == "__main__":

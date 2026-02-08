@@ -7,6 +7,7 @@ import { ChatInput } from "@/components/ChatInput"
 import { CitationList } from "@/components/CitationList"
 import { ConversationSidebar } from "@/components/ConversationSidebar"
 import { StatusIndicator } from "@/components/StatusIndicator"
+import { SuggestedQuestions } from "@/components/SuggestedQuestions"
 import { useChat } from "@/hooks/useChat"
 
 export default function Chat() {
@@ -24,6 +25,11 @@ export default function Chat() {
 
   const handleSend = () => {
     chat.processMessage()
+  }
+
+  const handleSuggestedQuestion = (question: string) => {
+    chat.setInput(question)
+    chat.processMessage(undefined, question)
   }
 
   const handleResumeConversation = (conversationId: string) => {
@@ -65,6 +71,9 @@ export default function Chat() {
             </div>
             <div className="w-full max-w-3xl">
               <ChatInput value={chat.input} onChange={chat.setInput} onSend={handleSend} centered={true} disabled={chat.isLoading(chat.currConversationId)} />
+            </div>
+            <div className="w-full max-w-3xl mt-4">
+              <SuggestedQuestions onSelectQuestion={handleSuggestedQuestion} />
             </div>
           </div>
         ) : (
