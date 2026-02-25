@@ -37,6 +37,7 @@ Get synthesized answers backed by verifiable citations to specific PubMed Centra
 
 **Backend:** FastAPI, PostgreSQL + pgvector, Claude API (default) / Ollama (fallback)
 **Frontend:** Next.js 15, TypeScript, Tailwind CSS
+**MCP Server:** Exposes RAG pipeline as tools for Claude Desktop and other MCP clients
 **Evaluation:** MLFlow, PubMedQA golden dataset (194 questions), automated metrics + LLM-as-judge
 **Pipeline:** 4-stage ingestion (collect, fetch, chunk, embed), self-hosted embeddings
 
@@ -86,6 +87,7 @@ Evaluation tracked via MLFlow with experiment comparison, prompt versioning, and
 - **Cross-encoder reranking:** ms-marco-MiniLM improves retrieval precision with ~0.8s latency cost
 - **Automatic LLM fallback:** Claude API by default, seamless fallback to local Ollama if API is unavailable
 - **Anonymous sessions:** localStorage-based user sessions with conversation isolation and ownership validation
+- **MCP integration:** RAG pipeline exposed as MCP tools (`search_papers`, `ask_openpharma`) for use in Claude Desktop
 
 See [docs/](docs/) for detailed architecture and design decisions.
 
