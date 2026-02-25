@@ -30,7 +30,9 @@ def insert_pmc_ids(pmc_ids_file: str, fetch_status: str = "pending", priority: i
         dry_run: If True, only report what would be done without making changes
     """
     # Database connection
-    db_url = os.getenv("DATABASE_URL", "postgresql://admin:admin@localhost:5432/openpharma")
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        raise RuntimeError("DATABASE_URL environment variable is not set")
     engine = create_engine(db_url)
     Session = sessionmaker(bind=engine)
     session = Session()

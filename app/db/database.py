@@ -3,7 +3,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", default="postgresql://admin:password@localhost:5432/openpharma")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is not set")
 
 # Connection pool optimization (defaults: pool_size=5, max_overflow=10, recycle=-1, pre_ping=False)
 engine = create_engine(

@@ -65,7 +65,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",  # React dev server
-        "https://openpharma.byhenry.me"  # Production
+        os.getenv("CORS_ALLOWED_ORIGIN", ""),  # Production domain
     ],
     allow_credentials=True,
     allow_methods=["*"],  # Allow all methods (GET, POST, etc.)

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Configure Entrez (NCBI requires email for API usage)
-Entrez.email = "hyang97@gmail.com"
+Entrez.email = os.getenv("NCBI_EMAIL", "")
 Entrez.tool = "OpenPharma"
 Entrez.api_key = os.getenv("NCBI_API_KEY", "")  # Optional: 10 req/sec with key, 3 req/sec without
 
