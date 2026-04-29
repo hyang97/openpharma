@@ -30,7 +30,7 @@ docker-compose ps                 # Verify both containers running
 
 ### 2. Start Cloudflare Tunnel (Production Access)
 ```bash
-cloudflared tunnel run openpharma-api  # Keep this terminal open
+cloudflared tunnel run byhenry-tunnel  # Keep this terminal open
 # Test: curl https://api.byhenry.me/health
 ```
 
@@ -216,13 +216,13 @@ cloudflared tunnel login  # Opens browser, saves credentials to ~/.cloudflared/c
 
 **Create tunnel:**
 ```bash
-cloudflared tunnel create openpharma-api  # Creates tunnel with UUID
+cloudflared tunnel create byhenry-tunnel  # Creates tunnel with UUID
 ls ~/.cloudflared/*.json  # Find your tunnel credentials file
 ```
 
 **Configure tunnel (create ~/.cloudflared/config.yml):**
 ```yaml
-tunnel: openpharma-api
+tunnel: byhenry-tunnel
 credentials-file: /Users/YOUR_USERNAME/.cloudflared/TUNNEL_UUID.json
 
 ingress:
@@ -233,12 +233,12 @@ ingress:
 
 **Route DNS:**
 ```bash
-cloudflared tunnel route dns openpharma-api api.byhenry.me
+cloudflared tunnel route dns byhenry-tunnel api.byhenry.me
 ```
 
 **Run tunnel:**
 ```bash
-cloudflared tunnel run openpharma-api  # Keep terminal open, or run as service
+cloudflared tunnel run byhenry-tunnel  # Keep terminal open, or run as service
 ```
 
 **Test tunnel:**
@@ -286,7 +286,7 @@ vercel logs               # View logs
 
 **Before sharing with users:**
 - [ ] Docker services running: `docker-compose ps`
-- [ ] Cloudflare tunnel running: `cloudflared tunnel run openpharma-api`
+- [ ] Cloudflare tunnel running: `cloudflared tunnel run byhenry-tunnel`
 - [ ] API accessible: `curl https://api.byhenry.me/health`
 - [ ] UI deployed: `https://openpharma.byhenry.me`
 - [ ] CORS configured: Check `app/main.py` includes production domain
