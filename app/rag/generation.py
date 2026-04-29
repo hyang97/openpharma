@@ -138,7 +138,7 @@ async def generate_response_stream(
         raw_stream = client.chat(model=OLLAMA_MODEL, messages=messages, stream=True, options={'keep_alive': -1})
         def token_iter():
             for chunk in raw_stream:
-                token = chunk.get('message', {}).get('content')
+                token = chunk.message.content
                 if token:
                     yield token
     else:
@@ -159,7 +159,7 @@ async def generate_response_stream(
                 client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
                 raw_stream = client.chat(model=OLLAMA_MODEL, messages=messages, stream=True, options={'keep_alive': -1})
                 for chunk in raw_stream:
-                    token = chunk.get('message', {}).get('content')
+                    token = chunk.message.content
                     if token:
                         yield token
 
@@ -279,7 +279,7 @@ def generate_response(
         )
         llm_time = (time.time() - llm_start) * 1000
         logger.info(f"LLM generation time: {llm_time:.0f}ms")
-        return response['message']['content']
+        return response.message.content
     except Exception as e:
         logger.error(f"Error generating response: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
