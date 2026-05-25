@@ -230,7 +230,7 @@ export function useChat(API_URL: string, useStreaming = false) {
             body: JSON.stringify({
                 user_message: user_input,
                 user_id: userId,
-                use_local: true,
+                use_local: false,
                 conversation_id: requestConversationId,
                 use_reranker: true,
                 additional_chunks_per_doc: 20

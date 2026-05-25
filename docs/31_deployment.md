@@ -7,7 +7,16 @@
 - **Commands**: `docker-compose up -d`, `cd ui && npm run dev`
 - **Cost**: $0
 
-### Phase 1 Demo (Current)
+### Current Production: GCP VM
+- **Host**: GCP VM `openpharma-vm` (e2-medium, us-west1, project `openpharma-497402`)
+- **Stack**: Docker (Postgres+pgvector + API), native Ollama (`nomic-embed-text` for query embeddings only). Generation uses Claude via `REMOTE_LLM_ONLY=true` (the VM has no local LLM); model `claude-haiku-4-5`.
+- **DB**: trimmed (excludes `icite_metadata`, no `openai_embedding` column), ~50 GB, moved via `pg_dump -Fc --compress=zstd` → GCS → restore. The 18 GB HNSW index is rebuilt on restore (needs RAM; built on a temporary larger machine, then resized back).
+- **Tunnel**: CLI-managed `openpharma-gcp-tunnel`, config at `/etc/cloudflared/config.yml` on the VM (ingress `api.byhenry.me → localhost:8000`), run as a systemd service. DNS: `api` is a Tunnel record pointing at this tunnel.
+- **Frontend**: Vercel, unchanged, points at `https://api.byhenry.me`.
+- **Reboot resilience**: containers use `restart: unless-stopped`; `ollama` and `cloudflared` are systemd-enabled.
+- **Cost**: ~$24/mo (currently on GCP trial credit).
+
+### Phase 1 Demo (original: laptop + Cloudflare Tunnel, superseded by the GCP VM above)
 - **Stack**: Local backend + Ollama, Cloudflare Tunnel, Vercel UI
 - **Cost**: $0/month
 - **Performance**: 30-50s responses, ~300ms tunnel latency
@@ -18,7 +27,7 @@
 # Install Cloudflare Tunnel
 brew install cloudflared
 cloudflared tunnel login
-cloudflared tunnel create openpharma
+cloudflared tunnel create byhenry-tunnel
 
 # Configure tunnel (~/.cloudflared/config.yml)
 tunnel: <tunnel-id>
@@ -30,7 +39,7 @@ ingress:
 
 # Start services
 docker-compose up -d
-cloudflared tunnel run openpharma
+cloudflared tunnel run byhenry-tunnel
 
 # Deploy UI to Vercel
 cd ui && vercel --prod
