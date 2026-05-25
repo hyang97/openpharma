@@ -194,7 +194,9 @@ async def send_message_stream(request: UserRequest):
     """
 
     # Determine which model to use
-    use_local = request.use_local if request.use_local is not None else os.getenv("USE_LOCAL_LLM", default="false").lower() == "true"
+    # Honor use_local only when the deployment is not remote-only (a cloud VM with no local model sets REMOTE_LLM_ONLY)
+    remote_only = os.getenv("REMOTE_LLM_ONLY", default="false").lower() == "true"
+    use_local = (request.use_local if request.use_local is not None else os.getenv("USE_LOCAL_LLM", default="false").lower() == "true") and not remote_only
 
     logger.info(f"Received question: {request.user_message[:100]}...")
     logger.debug(f"Using local model: {use_local}")
@@ -278,7 +280,9 @@ async def send_message(request: UserRequest):
     """Send a message and get an AI response with citations"""
 
     # Determine which model to use
-    use_local = request.use_local if request.use_local is not None else os.getenv("USE_LOCAL_LLM", default="false").lower() == "true"
+    # Honor use_local only when the deployment is not remote-only (a cloud VM with no local model sets REMOTE_LLM_ONLY)
+    remote_only = os.getenv("REMOTE_LLM_ONLY", default="false").lower() == "true"
+    use_local = (request.use_local if request.use_local is not None else os.getenv("USE_LOCAL_LLM", default="false").lower() == "true") and not remote_only
 
     logger.info(f"Received question: {request.user_message[:100]}...")
     logger.debug(f"Using local model: {use_local}")
