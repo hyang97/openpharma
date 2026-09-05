@@ -5,7 +5,7 @@ Takes search results and generates synthesized answers with citations.
 """
 from fastapi import HTTPException
 from typing import List, Optional
-import time, os, re
+import time, os, re, asyncio
 import ollama, anthropic
 
 from app.models import SearchResult
@@ -14,9 +14,18 @@ from app.rag.response_processing import ANSWER_HEADING_PATTERN, REFERENCES_HEADI
 
 logger = get_logger(__name__)
 
-# Model configuration - change this to experiment with different models
+# Model configuration
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
+
+# Gemini fallback model chain
+GEMINI_MODEL_CHAIN = [
+    os.getenv("GEMINI_MODEL", "gemini-3.7-flash"),
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite-preview",
+]
+# Deduplicate while preserving order
+GEMINI_MODEL_CHAIN = list(dict.fromkeys(GEMINI_MODEL_CHAIN))
 
 # Number of tokens to lookahead for ## References
 LOOKAHEAD_LENGTH = 5
@@ -81,6 +90,19 @@ def _extract_system_message(messages: List[dict]) -> tuple[str, List[dict]]:
     return system_message, chat_messages
 
 
+def _format_gemini_contents(messages: List[dict]) -> tuple[str, list]:
+    """For Gemini API, extract system instruction and format chat contents."""
+    system_instruction = SYSTEM_PROMPT
+    contents = []
+    for msg in messages:
+        if msg['role'] == 'system':
+            system_instruction = msg['content']
+        else:
+            role = "user" if msg['role'] == 'user' else "model"
+            contents.append({"role": role, "parts": [{"text": msg['content']}]})
+    return system_instruction, contents
+
+
 
 def build_messages(user_message: str, chunks: list[SearchResult], conversation_history: Optional[List[dict]]) -> List[dict]:
     """Build RAG prompt with user message, context, and literature chunks."""
@@ -132,20 +154,57 @@ async def generate_response_stream(
     # Build messages
     messages = build_messages(user_message, chunks, conversation_history)
 
-    # Create token_iter based on local vs. api llm
-    if use_local:
-        client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
-        raw_stream = client.chat(model=OLLAMA_MODEL, messages=messages, stream=True, options={'keep_alive': -1})
-        def token_iter():
+    # Async token stream generator
+    async def token_iter():
+        if use_local:
+            client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+            raw_stream = client.chat(model=OLLAMA_MODEL, messages=messages, stream=True, options={'keep_alive': -1})
             for chunk in raw_stream:
                 token = chunk.message.content
                 if token:
                     yield token
-    else:
-        # Anthropic streaming with Ollama fallback
-        def token_iter():
+            return
+
+        # Remote LLM streaming: Gemini -> Anthropic -> Ollama fallback
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if gemini_api_key:
             try:
-                client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+                from google import genai
+                from google.genai import types
+
+                client = genai.Client(api_key=gemini_api_key)
+                system_instruction, contents = _format_gemini_contents(messages)
+                config = types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    max_output_tokens=4096,
+                )
+
+                for model_name in GEMINI_MODEL_CHAIN:
+                    try:
+                        logger.info(f"Streaming with Gemini model: {model_name}")
+                        stream = await client.aio.models.generate_content_stream(
+                            model=model_name,
+                            contents=contents,
+                            config=config,
+                        )
+                        # 8-second fail-fast check on first token to accommodate cold connection while preventing server queue hangs
+                        first_chunk = await asyncio.wait_for(stream.__anext__(), timeout=8.0)
+                        if first_chunk.text:
+                            yield first_chunk.text
+                        async for chunk in stream:
+                            if chunk.text:
+                                yield chunk.text
+                        return
+                    except Exception as model_err:
+                        logger.warning(f"Gemini model {model_name} streaming failed or timed out: {model_err}")
+            except Exception as e:
+                logger.warning(f"Gemini client initialization failed: {e}")
+
+        # Anthropic fallback
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        if anthropic_key:
+            try:
+                client = anthropic.Anthropic(api_key=anthropic_key)
                 system_prompt, chat_messages = _extract_system_message(messages)
                 with client.messages.stream(
                     model=ANTHROPIC_MODEL,
@@ -153,15 +212,19 @@ async def generate_response_stream(
                     system=system_prompt,
                     messages=chat_messages
                 ) as stream:
-                    yield from stream.text_stream
+                    for text in stream.text_stream:
+                        yield text
+                return
             except Exception as e:
                 logger.warning(f"Anthropic API failed, falling back to Ollama: {e}")
-                client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
-                raw_stream = client.chat(model=OLLAMA_MODEL, messages=messages, stream=True, options={'keep_alive': -1})
-                for chunk in raw_stream:
-                    token = chunk.message.content
-                    if token:
-                        yield token
+
+        # Local Ollama fallback
+        client = ollama.Client(host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+        raw_stream = client.chat(model=OLLAMA_MODEL, messages=messages, stream=True, options={'keep_alive': -1})
+        for chunk in raw_stream:
+            token = chunk.message.content
+            if token:
+                yield token
 
     # Stores initial tokens in string, waiting to hit ## Answer
     preamble_buffer = ""
@@ -175,7 +238,7 @@ async def generate_response_stream(
     full_response = ""
     token_count = 0
 
-    for token in token_iter():
+    async for token in token_iter():
         
         preamble_buffer += token 
         full_response += token 
@@ -249,24 +312,62 @@ def generate_response(
     messages = build_messages(user_message, chunks, conversation_history)
     logger.debug(f"Messages:\n{messages}\n")
 
-    # Call LLM (try Anthropic first if not local, fall back to Ollama on failure)
+    # Call LLM (try Gemini first, then Anthropic, then fall back to Ollama)
     if not use_local:
-        try:
-            llm_start = time.time()
-            logger.info(f"Using model: {ANTHROPIC_MODEL}")
-            client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-            system_prompt, chat_messages = _extract_system_message(messages)
-            response = client.messages.create(
-                model=ANTHROPIC_MODEL,
-                max_tokens=4096,
-                system=system_prompt,
-                messages=chat_messages,
-            )
-            llm_time = (time.time() - llm_start) * 1000
-            logger.info(f"LLM generation time: {llm_time:.0f}ms")
-            return response.content[0].text
-        except Exception as e:
-            logger.warning(f"Anthropic API failed, falling back to Ollama: {e}")
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if gemini_api_key:
+            try:
+                from google import genai
+                from google.genai import types
+
+                client = genai.Client(
+                    api_key=gemini_api_key,
+                    http_options=types.HttpOptions(
+                        retry_options=types.HttpRetryOptions(attempts=1),
+                    ),
+                )
+                system_instruction, contents = _format_gemini_contents(messages)
+                config = types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    max_output_tokens=4096,
+                )
+
+                for model_name in GEMINI_MODEL_CHAIN:
+                    try:
+                        llm_start = time.time()
+                        logger.info(f"Using Gemini model: {model_name}")
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=contents,
+                            config=config,
+                        )
+                        llm_time = (time.time() - llm_start) * 1000
+                        logger.info(f"Gemini LLM generation time ({model_name}): {llm_time:.0f}ms")
+                        if response.text:
+                            return response.text
+                    except Exception as model_err:
+                        logger.warning(f"Gemini model {model_name} failed: {model_err}")
+            except Exception as e:
+                logger.warning(f"Gemini client initialization failed: {e}")
+
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        if anthropic_key:
+            try:
+                llm_start = time.time()
+                logger.info(f"Using Anthropic model: {ANTHROPIC_MODEL}")
+                client = anthropic.Anthropic(api_key=anthropic_key)
+                system_prompt, chat_messages = _extract_system_message(messages)
+                response = client.messages.create(
+                    model=ANTHROPIC_MODEL,
+                    max_tokens=4096,
+                    system=system_prompt,
+                    messages=chat_messages,
+                )
+                llm_time = (time.time() - llm_start) * 1000
+                logger.info(f"LLM generation time: {llm_time:.0f}ms")
+                return response.content[0].text
+            except Exception as e:
+                logger.warning(f"Anthropic API failed, falling back to Ollama: {e}")
 
     try:
         llm_start = time.time()

@@ -123,7 +123,7 @@ Generates synthesized answers with inline `[PMCxxxxxx]` citations.
 
 **Implementation:**
 1. Build messages array with system prompt, conversation history, and literature chunks
-2. Call LLM (Ollama Llama 3.1 8B or Claude Haiku 3)
+2. Call LLM (Gemini 3.7 Flash / 3.5 Flash Lite fallback chain, Anthropic Claude, or Ollama Llama 3.1 8B)
 3. Return raw response text with `## Answer` and `## References` headings
 
 **LLM Response Format:**

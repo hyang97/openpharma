@@ -353,7 +353,7 @@ async def send_message(request: UserRequest):
             conversation_citations=conversation_citations,
             retrieved_chunk_ids=[chunk.chunk_id for chunk in chunks],
             raw_llm_response=generated_response,
-            llm_provider="ollama" if use_local else "anthropic",
+            llm_provider="ollama" if use_local else ("gemini" if os.getenv("GEMINI_API_KEY") else "anthropic"),
             generation_time_ms=generation_time_ms,
             conversation_id=conversation_id
         )

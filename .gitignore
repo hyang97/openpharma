@@ -82,6 +82,7 @@ backups/
 TODO.md
 BACKLOG.md
 CLAUDE.md
+GEMINI.md
 .mcp.json
 
 # MCP config (contains API keys)
